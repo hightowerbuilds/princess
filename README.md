@@ -1,8 +1,44 @@
 # Princess
 
-Princess is a repo-to-repo transformer.
+Princess is a repo-to-repo transformer for folder names.
 
 Given an existing repository, Princess analyzes what each directory is for, proposes a normalized "Princess-optimized" directory name, creates a renamed copy of the repo, rewrites affected references inside that copy, and leaves the original repo untouched.
+
+The naming grammar is simple:
+
+```text
+purpose--directive--directive
+```
+
+Examples:
+
+- `docs--product-spec`
+- `schemas--json-contracts`
+- `src--cli-and-pipeline`
+- `components--shared-ui`
+- `lib--pure-ts`
+
+## Methodology
+
+Princess does not rename from the current folder name alone. It builds a dossier for each directory from:
+
+- representative filenames
+- extension counts
+- framework hints
+- route and test signals
+- local instruction files
+- parent and sibling context
+
+Then it applies a conservative decision rule:
+
+- rename only when the purpose is clear
+- keep strong names as-is
+- ignore generated paths
+- leave low-confidence folders untouched
+
+The point is not novelty for its own sake. The point is to make directory purpose legible enough that an AI agent or a human can infer how a repo is organized from the tree itself.
+
+## Tool
 
 The first version is intentionally narrow:
 
@@ -17,6 +53,12 @@ Today the executable scaffold implements the dry-run half of that contract:
 - build folder dossiers
 - infer rename proposals with the heuristic engine or the OpenAI model adapter
 - emit a rename plan without copying or mutating anything
+
+The current CLI supports:
+
+- `--engine heuristic` for deterministic local inference
+- `--engine model` for OpenAI Responses API inference
+- `--engine auto` to try the model path first and fall back to heuristics
 
 ## Current v0 focus
 
@@ -38,28 +80,49 @@ Supporting modes:
 - `princess optimize <repo> --json`
 - `princess verify <repo-princess>`
 
+## We Use It Here
+
+This repo is already using Princess naming at the top level:
+
+- `docs--product-spec`
+- `examples--reference-output`
+- `fixtures--sample-repos`
+- `schemas--json-contracts`
+- `src--cli-and-pipeline`
+
+We also ran Princess analysis against the embedded sample repo and applied the resulting folder renames there:
+
+- `src/components` -> `src/components--shared-ui`
+- `src/hooks` -> `src/hooks--react-state`
+- `src/lib` -> `src/lib--pure-ts`
+- `src/types` -> `src/types--domain-types`
+
+That is deliberate dogfooding. The tool is not just describing this method; it is starting to use it inside its own workspace.
+
+At this point, running Princess against this repo in heuristic mode yields zero rename candidates. That is the target behavior once a repo has already taken the naming pass.
+
 ## Run the scaffold
 
 ```bash
-bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run
+bun run src--cli-and-pipeline/cli.ts optimize . --dry-run
 ```
 
 JSON mode:
 
 ```bash
-bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json
+bun run src--cli-and-pipeline/cli.ts optimize . --dry-run --json
 ```
 
 Model mode:
 
 ```bash
-OPENAI_API_KEY=... bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --engine model
+OPENAI_API_KEY=... bun run src--cli-and-pipeline/cli.ts optimize . --dry-run --engine model
 ```
 
 Auto mode:
 
 ```bash
-bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --engine auto
+bun run src--cli-and-pipeline/cli.ts optimize . --dry-run --engine auto
 ```
 
 `auto` tries the model path first and falls back to heuristics if the API path is unavailable or invalid.
@@ -74,6 +137,22 @@ Supported environment variables:
 - `PRINCESS_OPENAI_REASONING_EFFORT`
 - `PRINCESS_OPENAI_TIMEOUT_MS`
 - `PRINCESS_OPENAI_MAX_DOSSIERS_PER_CALL`
+
+## Current Status
+
+What exists now:
+
+- repo discovery and folder dossier generation
+- heuristic inference
+- OpenAI model-backed inference with structured JSON output
+- dry-run planning and reporting
+
+What does not exist yet:
+
+- copied output repo generation
+- applied renames in the copied repo
+- reference rewriting in the copied repo
+- verification manifest written to `.princess/`
 
 ## Repo layout
 
