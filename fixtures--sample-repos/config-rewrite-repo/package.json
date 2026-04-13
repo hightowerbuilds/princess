@@ -1,0 +1,5 @@
+{
+  "name": "config-rewrite-repo",
+  "private": true,
+  "type": "module"
+}

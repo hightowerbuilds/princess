@@ -28,6 +28,10 @@ const REWRITABLE_CODE_EXTENSIONS = new Set([
   ".cjs",
 ]);
 
+const STRUCTURED_CONFIG_FILES = new Set(["tsconfig.json", "jsconfig.json"]);
+const SCRIPT_CONFIG_FILE_PATTERN =
+  /(?:^|\/)(?:vite|vitest|jest|next|playwright|webpack|rollup)\.config\.(?:js|ts|mjs|cjs)$/;
+
 export async function executeRenamePlan(
   plan: RenamePlan,
   options: ApplyOptions = {},
@@ -37,11 +41,17 @@ export async function executeRenamePlan(
   const proposals = clonePlannedRenames(plan.proposals);
   await applyDirectoryRenames(plan.outputRepoPath, proposals);
 
-  const rewrites = await rewriteRelativeImports({
+  const importRewrites = await rewriteRelativeImports({
     sourceRepoPath: plan.sourceRepoPath,
     outputRepoPath: plan.outputRepoPath,
     proposals,
   });
+  const configRewrites = await rewriteConfigPaths({
+    sourceRepoPath: plan.sourceRepoPath,
+    outputRepoPath: plan.outputRepoPath,
+    proposals,
+  });
+  const rewrites = [...importRewrites, ...configRewrites];
 
   const verification = await verifyOutputRepo(plan.outputRepoPath, proposals, rewrites);
 
@@ -184,6 +194,75 @@ async function rewriteRelativeImports(input: {
   return records;
 }
 
+async function rewriteConfigPaths(input: {
+  sourceRepoPath: string;
+  outputRepoPath: string;
+  proposals: PlannedRename[];
+}): Promise<RewriteRecord[]> {
+  const records: RewriteRecord[] = [];
+  const renameEntries = buildRenameEntries(input.proposals);
+  const sourceFiles = await walkFiles(input.sourceRepoPath);
+
+  for (const absoluteSourcePath of sourceFiles) {
+    const relativeSourcePath = normalizePosixPath(
+      path.relative(input.sourceRepoPath, absoluteSourcePath),
+    );
+    const newRelativePath = applyRenameMapToPath(relativeSourcePath, renameEntries);
+    const outputFilePath = path.join(
+      input.outputRepoPath,
+      ...newRelativePath.split("/"),
+    );
+
+    if (!(await pathExists(outputFilePath))) {
+      continue;
+    }
+
+    if (isStructuredConfigFile(relativeSourcePath)) {
+      const originalContents = await readFile(outputFilePath, "utf8");
+      const rewriteResult = rewriteStructuredConfigJson({
+        contents: originalContents,
+        oldFilePath: relativeSourcePath,
+        newFilePath: newRelativePath,
+        renameEntries,
+      });
+
+      if (rewriteResult.rewrites > 0) {
+        await writeFile(outputFilePath, rewriteResult.contents, "utf8");
+        records.push({
+          filePath: newRelativePath,
+          kind: "config",
+          status: "updated",
+          details: `Updated ${rewriteResult.rewrites} config path${rewriteResult.rewrites === 1 ? "" : "s"}.`,
+        });
+      }
+
+      continue;
+    }
+
+    if (isScriptConfigFile(relativeSourcePath)) {
+      const originalContents = await readFile(outputFilePath, "utf8");
+      const rewriteResult = rewriteScriptConfigLiterals({
+        contents: originalContents,
+        oldFilePath: relativeSourcePath,
+        newFilePath: newRelativePath,
+        renameEntries,
+      });
+
+      if (rewriteResult.rewrites > 0) {
+        await writeFile(outputFilePath, rewriteResult.contents, "utf8");
+        records.push({
+          filePath: newRelativePath,
+          kind: "config",
+          status: "updated",
+          details: `Updated ${rewriteResult.rewrites} config literal${rewriteResult.rewrites === 1 ? "" : "s"}.`,
+        });
+      }
+    }
+  }
+
+  return records;
+}
+
 function rewriteModuleSpecifiers(input: {
   contents: string;
   oldFilePath: string;
@@ -252,6 +331,181 @@ function rewriteRelativeSpecifier(input: {
     relativeFromNewFile === "" ? "." : normalizeRelativeSpecifier(relativeFromNewFile);
 
   return `${normalizedRelative}${suffix}`;
+}
+
+function rewriteStructuredConfigJson(input: {
+  contents: string;
+  oldFilePath: string;
+  newFilePath: string;
+  renameEntries: RenameEntry[];
+}): { contents: string; rewrites: number } {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(input.contents);
+  } catch {
+    return {
+      contents: input.contents,
+      rewrites: 0,
+    };
+  }
+
+  const result = rewriteStructuredConfigValue({
+    value: parsed,
+    keyPath: [],
+    oldFilePath: input.oldFilePath,
+    newFilePath: input.newFilePath,
+    renameEntries: input.renameEntries,
+  });
+
+  if (result.rewrites === 0) {
+    return {
+      contents: input.contents,
+      rewrites: 0,
+    };
+  }
+
+  return {
+    contents: `${JSON.stringify(result.value, null, 2)}\n`,
+    rewrites: result.rewrites,
+  };
+}
+
+function rewriteStructuredConfigValue(input: {
+  value: unknown;
+  keyPath: string[];
+  oldFilePath: string;
+  newFilePath: string;
+  renameEntries: RenameEntry[];
+}): { value: unknown; rewrites: number } {
+  if (typeof input.value === "string") {
+    if (!shouldRewriteStructuredConfigString(input.keyPath)) {
+      return { value: input.value, rewrites: 0 };
+    }
+
+    const rewritten = rewriteConfigPathValue({
+      value: input.value,
+      oldFilePath: input.oldFilePath,
+      newFilePath: input.newFilePath,
+      renameEntries: input.renameEntries,
+    });
+
+    return {
+      value: rewritten,
+      rewrites: rewritten === input.value ? 0 : 1,
+    };
+  }
+
+  if (Array.isArray(input.value)) {
+    let rewrites = 0;
+    const nextArray = input.value.map((entry, index) => {
+      const result = rewriteStructuredConfigValue({
+        ...input,
+        value: entry,
+        keyPath: [...input.keyPath, String(index)],
+      });
+      rewrites += result.rewrites;
+      return result.value;
+    });
+
+    return {
+      value: nextArray,
+      rewrites,
+    };
+  }
+
+  if (input.value && typeof input.value === "object") {
+    let rewrites = 0;
+    const nextObject: Record<string, unknown> = {};
+
+    for (const [key, entry] of Object.entries(input.value as Record<string, unknown>)) {
+      const result = rewriteStructuredConfigValue({
+        ...input,
+        value: entry,
+        keyPath: [...input.keyPath, key],
+      });
+      rewrites += result.rewrites;
+      nextObject[key] = result.value;
+    }
+
+    return {
+      value: nextObject,
+      rewrites,
+    };
+  }
+
+  return {
+    value: input.value,
+    rewrites: 0,
+  };
+}
+
+function rewriteScriptConfigLiterals(input: {
+  contents: string;
+  oldFilePath: string;
+  newFilePath: string;
+  renameEntries: RenameEntry[];
+}): { contents: string; rewrites: number } {
+  let rewrites = 0;
+
+  const contents = input.contents.replace(
+    /(['"`])([^'"`\n\r]+)\1/g,
+    (fullMatch, quote, literal) => {
+      if (typeof literal !== "string") {
+        return fullMatch;
+      }
+
+      const rewritten = rewriteConfigPathValue({
+        value: literal,
+        oldFilePath: input.oldFilePath,
+        newFilePath: input.newFilePath,
+        renameEntries: input.renameEntries,
+      });
+
+      if (rewritten === literal) {
+        return fullMatch;
+      }
+
+      rewrites += 1;
+      return `${quote}${rewritten}${quote}`;
+    },
+  );
+
+  return {
+    contents,
+    rewrites,
+  };
+}
+
+function rewriteConfigPathValue(input: {
+  value: string;
+  oldFilePath: string;
+  newFilePath: string;
+  renameEntries: RenameEntry[];
+}): string {
+  if (!looksLikePathValue(input.value)) {
+    return input.value;
+  }
+
+  const [baseValue, suffix = ""] = splitPathValueDecorations(input.value);
+
+  if (baseValue.startsWith(".")) {
+    return rewriteRelativeSpecifier({
+      specifier: `${baseValue}${suffix}`,
+      oldFilePath: input.oldFilePath,
+      newFilePath: input.newFilePath,
+      renameEntries: input.renameEntries,
+    });
+  }
+
+  const normalizedBase = normalizePosixPath(path.posix.normalize(baseValue));
+  const rewrittenBase = applyRenameMapToPath(normalizedBase, input.renameEntries);
+
+  if (rewrittenBase === normalizedBase) {
+    return input.value;
+  }
+
+  return `${rewrittenBase}${suffix}`;
 }
 
 async function verifyOutputRepo(
@@ -395,6 +649,16 @@ function splitSpecifierSuffix(specifier: string): [string, string?] {
   return [match[1], match[2]];
 }
 
+function splitPathValueDecorations(value: string): [string, string?] {
+  const index = value.search(/[*?#]/);
+
+  if (index === -1) {
+    return [value];
+  }
+
+  return [value.slice(0, index), value.slice(index)];
+}
+
 function shouldCopyPath(input: {
   sourcePath: string;
   rootPath: string;
@@ -440,6 +704,41 @@ async function pathExists(targetPath: string): Promise<boolean> {
 interface RenameEntry {
   from: string;
   to: string;
+}
+
+function isStructuredConfigFile(relativeSourcePath: string): boolean {
+  return STRUCTURED_CONFIG_FILES.has(path.posix.basename(relativeSourcePath));
+}
+
+function isScriptConfigFile(relativeSourcePath: string): boolean {
+  return SCRIPT_CONFIG_FILE_PATTERN.test(relativeSourcePath);
+}
+
+function shouldRewriteStructuredConfigString(keyPath: string[]): boolean {
+  const filteredPath = keyPath.filter((segment) => !/^\d+$/.test(segment));
+  const joined = filteredPath.join(".");
+
+  return [
+    "compilerOptions.baseUrl",
+    "compilerOptions.paths",
+    "include",
+    "exclude",
+    "files",
+    "references.path",
+    "extends",
+  ].some((candidate) => joined === candidate || joined.startsWith(`${candidate}.`));
+}
+
+function looksLikePathValue(value: string): boolean {
+  if (!value || /\s/.test(value) || value.includes("://")) {
+    return false;
+  }
+
+  if (value.startsWith(".")) {
+    return true;
+  }
+
+  return /^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_.@*-]+)+$/.test(value);
 }
 
 async function walkFilesRecursive(

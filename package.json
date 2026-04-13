@@ -14,6 +14,9 @@
     "dry-run:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run",
     "dry-run:fixture:json": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json",
     "apply:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --force",
-    "verify:fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/sample-repo-princess"
+    "verify:fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/sample-repo-princess",
+    "dry-run:config-fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/config-rewrite-repo --dry-run",
+    "apply:config-fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/config-rewrite-repo --force",
+    "verify:config-fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/config-rewrite-repo-princess"
   }
 }

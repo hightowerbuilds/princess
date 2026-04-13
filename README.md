@@ -68,6 +68,7 @@ Today the executable scaffold implements the dry-run half of that contract:
 - create a sibling output repo in apply mode
 - rename approved directories in the copied repo
 - rewrite affected relative imports in the copied repo
+- rewrite supported config paths in the copied repo
 - write `.princess/rename-plan.json` and `.princess/run-manifest.json`
 
 The current CLI supports:
@@ -180,13 +181,24 @@ What exists now:
 - copied output repo generation
 - applied directory renames in the output repo
 - relative import rewriting in the output repo
+- config-path rewriting for `tsconfig.json`, `jsconfig.json`, and common JS/TS config files such as `vite.config.ts`
 - `.princess` manifest artifacts in the output repo
 
 What does not exist yet:
 
-- config-path rewriting beyond relative import updates
+- package script rewriting and broader config coverage
 - framework-aware verification like `tsc`, `vite build`, or `next lint`
 - a packaged release beyond local Bun linking
+
+## Config Rewrite Coverage
+
+Princess currently rewrites:
+
+- `compilerOptions.paths` values in `tsconfig.json` and `jsconfig.json`
+- other path-oriented fields such as `include`, `exclude`, `files`, `references[].path`, and `extends` in those files
+- simple path-like string literals in common JS/TS config files such as `vite.config.ts`
+
+Princess does not yet rewrite arbitrary shell commands in `package.json` scripts.
 
 ## Repo layout
 
