@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://princess.local/schemas/run-manifest.schema.json",
+  "title": "Princess Run Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runId",
+    "sourceRepoPath",
+    "outputRepoPath",
+    "createdAt",
+    "thresholds",
+    "proposals",
+    "rewrites",
+    "verification"
+  ],
+  "properties": {
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceRepoPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outputRepoPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minConfidence", "maxNameLength", "maxSegments"],
+      "properties": {
+        "minConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "maxNameLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxSegments": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relativePath",
+          "currentName",
+          "proposedName",
+          "decision",
+          "confidence",
+          "applied",
+          "reason"
+        ],
+        "properties": {
+          "relativePath": {
+            "type": "string"
+          },
+          "currentName": {
+            "type": "string"
+          },
+          "proposedName": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": ["rename", "keep", "ignore"]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rewrites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["filePath", "kind", "status"],
+        "properties": {
+          "filePath": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["import", "config", "script", "other"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["updated", "skipped", "failed"]
+          },
+          "details": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["passed", "partial", "failed", "skipped"]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["passed", "failed", "skipped"]
+              },
+              "details": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "princess",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "princess": "./src--cli-and-pipeline/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src--cli-and-pipeline/cli.ts",
+    "dry-run:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run",
+    "dry-run:fixture:json": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json"
+  }
+}
