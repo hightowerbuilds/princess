@@ -1,12 +1,14 @@
 import type {
   FolderDossier,
   ModelThresholds,
+  OpenAIModelOptions,
   RenamePlan,
   RenameProposal,
   RepoSummary,
   RunManifest,
 } from "./contracts";
 import { inferHeuristicRenameProposals } from "./infer";
+import { inferModelRenameProposals } from "./model";
 
 export const DEFAULT_THRESHOLDS: ModelThresholds = {
   minConfidence: 0.78,
@@ -37,10 +39,13 @@ export interface AnalysisInput {
   dossiers: FolderDossier[];
   thresholds?: Partial<ModelThresholds>;
   engine?: InferenceEngine;
+  modelOptions?: OpenAIModelOptions;
 }
 
 export interface InferenceResult {
   proposals: RenameProposal[];
+  engineUsed: "heuristic" | "model";
+  warnings: string[];
   rawModelResponse?: string;
 }
 
@@ -64,13 +69,49 @@ export async function inferRenameProposals(
   const engine = context.engine ?? "heuristic";
 
   if (engine === "model") {
-    throw new Error(
-      "Model inference is not wired yet. Use the heuristic engine until the API-backed inference stage exists.",
-    );
+    const result = await inferModelRenameProposals({
+      repoSummary: context.repoSummary,
+      dossiers: context.dossiers,
+      thresholds: context.thresholds,
+      modelOptions: context.modelOptions,
+    });
+
+    return {
+      ...result,
+      engineUsed: "model",
+      warnings: [],
+    };
+  }
+
+  if (engine === "auto") {
+    try {
+      const result = await inferModelRenameProposals({
+        repoSummary: context.repoSummary,
+        dossiers: context.dossiers,
+        thresholds: context.thresholds,
+        modelOptions: context.modelOptions,
+      });
+
+      return {
+        ...result,
+        engineUsed: "model",
+        warnings: [],
+      };
+    } catch {
+      return {
+        proposals: inferHeuristicRenameProposals(context.dossiers, context.thresholds),
+        engineUsed: "heuristic",
+        warnings: [
+          "Auto mode fell back to heuristic inference because the model path was unavailable or invalid.",
+        ],
+      };
+    }
   }
 
   return {
     proposals: inferHeuristicRenameProposals(context.dossiers, context.thresholds),
+    engineUsed: "heuristic",
+    warnings: [],
   };
 }
 
@@ -78,12 +119,12 @@ export async function buildRenamePlan(
   context: PipelineContext,
 ): Promise<RenamePlan> {
   const thresholds = resolveThresholds(context.thresholds);
-  const { proposals } = await inferRenameProposals({
+  const inference = await inferRenameProposals({
     ...context,
     thresholds,
   });
 
-  const preliminaryPlan = proposals.map((proposal) => ({
+  const preliminaryPlan = inference.proposals.map((proposal) => ({
     relativePath: proposal.relativePath,
     currentName: proposal.currentName,
     proposedName: proposal.proposedName,
@@ -105,6 +146,11 @@ export async function buildRenamePlan(
     createdAt: new Date().toISOString(),
     thresholds,
     proposals: preliminaryPlan,
+    inference: {
+      engineRequested: context.engine ?? "heuristic",
+      engineUsed: inference.engineUsed,
+      warnings: inference.warnings,
+    },
   };
 }
 

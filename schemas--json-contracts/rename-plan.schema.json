@@ -90,6 +90,26 @@
           }
         }
       }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engineRequested", "engineUsed", "warnings"],
+      "properties": {
+        "engineRequested": {
+          "type": "string"
+        },
+        "engineUsed": {
+          "type": "string",
+          "enum": ["heuristic", "model"]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

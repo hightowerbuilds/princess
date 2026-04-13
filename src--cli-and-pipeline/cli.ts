@@ -53,12 +53,6 @@ async function runOptimize(parsed: ParsedCommand): Promise<void> {
 
   const engine = String(parsed.flags.engine ?? "heuristic");
 
-  if (engine === "model") {
-    throw new Error(
-      'Model inference is not wired yet in this scaffold. Use `--engine heuristic` for now.',
-    );
-  }
-
   const outputRepoPath = parsed.flags.out
     ? path.resolve(String(parsed.flags.out))
     : path.join(path.dirname(sourceRepoPath), `${path.basename(sourceRepoPath)}-princess`);
@@ -88,7 +82,25 @@ async function runOptimize(parsed: ParsedCommand): Promise<void> {
     repoSummary,
     dossiers,
     thresholds,
-    engine: engine === "auto" ? "heuristic" : "heuristic",
+    engine:
+      engine === "model" || engine === "auto" || engine === "heuristic"
+        ? engine
+        : "heuristic",
+    modelOptions: {
+      model: typeof parsed.flags.model === "string" ? parsed.flags.model : undefined,
+      reasoningEffort:
+        typeof parsed.flags["reasoning-effort"] === "string"
+          ? parsed.flags["reasoning-effort"] as never
+          : undefined,
+      timeoutMs:
+        typeof parsed.flags["timeout-ms"] === "number"
+          ? parsed.flags["timeout-ms"]
+          : undefined,
+      maxDossiersPerCall:
+        typeof parsed.flags["max-dossiers-per-call"] === "number"
+          ? parsed.flags["max-dossiers-per-call"]
+          : undefined,
+    },
   });
 
   if (parsed.flags.json) {
@@ -97,7 +109,8 @@ async function runOptimize(parsed: ParsedCommand): Promise<void> {
         {
           command: "optimize",
           mode: "dry-run",
-          engine,
+          engineRequested: engine,
+          engineUsed: plan.inference?.engineUsed ?? engine,
           sourceRepoPath,
           outputRepoPath,
           repoSummary,
@@ -235,12 +248,13 @@ function printUsage(): void {
   console.log(`Princess
 
 Usage:
-  princess optimize <repo> [--dry-run] [--json] [--engine heuristic]
+  princess optimize <repo> [--dry-run] [--json] [--engine heuristic|auto|model]
   princess verify <repo> [--json]
 
 Notes:
   - This scaffold currently runs in dry-run mode only.
-  - --engine model is reserved for the later API-backed inference stage.
+  - --engine model uses OPENAI_API_KEY with the Responses API.
+  - --engine auto tries the model path first and falls back to heuristics.
 `);
 }
 

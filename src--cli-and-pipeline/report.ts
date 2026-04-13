@@ -25,13 +25,28 @@ export function formatDryRunReport(input: DryRunReportInput): string {
   lines.push("");
   lines.push(`Source: ${input.sourceRepoPath}`);
   lines.push(`Output: ${input.outputRepoPath}`);
-  lines.push(`Engine: ${input.engine}`);
+  const engineRequested = input.plan.inference?.engineRequested ?? input.engine;
+  const engineUsed = input.plan.inference?.engineUsed ?? input.engine;
+  lines.push(
+    engineRequested === engineUsed
+      ? `Engine: ${engineUsed}`
+      : `Engine: ${engineUsed} (requested ${engineRequested})`,
+  );
   lines.push(`Detected stack: ${input.repoSummary.detectedStack.join(", ") || "unknown"}`);
   lines.push(`Naming style: ${input.repoSummary.namingStyle ?? "unknown"}`);
   lines.push(`Directories analyzed: ${input.dossiers.length}`);
   lines.push(`Rename candidates: ${renameCount}`);
   lines.push(`Kept: ${keepCount}`);
   lines.push(`Ignored: ${ignoreCount}`);
+
+  if (input.plan.inference && input.plan.inference.warnings.length > 0) {
+    lines.push("");
+    lines.push("Inference notes:");
+
+    for (const warning of input.plan.inference.warnings) {
+      lines.push(`- ${warning}`);
+    }
+  }
 
   const applied = input.plan.proposals.filter((proposal) => proposal.applied);
   const kept = input.plan.proposals.filter((proposal) => proposal.decision === "keep");

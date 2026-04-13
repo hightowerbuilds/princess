@@ -65,6 +65,11 @@ Flags:
 - `--out <path>`: explicit output path
 - `--dry-run`: analyze and emit a plan without copying or renaming
 - `--json`: print the final plan or manifest as JSON
+- `--engine <heuristic|auto|model>`: choose inference mode
+- `--model <id>`: override the default OpenAI model in model-backed modes
+- `--reasoning-effort <level>`: pass a reasoning effort for model-backed modes
+- `--timeout-ms <n>`: request timeout for model-backed modes
+- `--max-dossiers-per-call <n>`: chunk large repos for model-backed modes
 - `--max-depth <n>`: limit analysis depth
 - `--min-confidence <0-1>`: minimum confidence required to rename
 - `--include-hidden`: analyze hidden directories except ignored system paths
@@ -111,6 +116,12 @@ Required dossier fields:
 - short static summary
 
 The model should reason over dossiers, not raw repo dumps.
+
+Current scaffold note:
+
+- `heuristic` is fully local and deterministic.
+- `model` uses the OpenAI Responses API with structured JSON output.
+- `auto` tries `model` first and falls back to `heuristic`.
 
 ## Princess naming grammar
 
@@ -283,4 +294,3 @@ Princess does not mutate the source repo, so rollback is simple:
 4. JS/TS reference rewriter
 5. Verification and reporting
 6. Interactive review mode later if needed
-

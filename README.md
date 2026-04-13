@@ -15,7 +15,7 @@ Today the executable scaffold implements the dry-run half of that contract:
 
 - scan a repo
 - build folder dossiers
-- infer rename proposals with the heuristic engine
+- infer rename proposals with the heuristic engine or the OpenAI model adapter
 - emit a rename plan without copying or mutating anything
 
 ## Current v0 focus
@@ -49,6 +49,31 @@ JSON mode:
 ```bash
 bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json
 ```
+
+Model mode:
+
+```bash
+OPENAI_API_KEY=... bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --engine model
+```
+
+Auto mode:
+
+```bash
+bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --engine auto
+```
+
+`auto` tries the model path first and falls back to heuristics if the API path is unavailable or invalid.
+
+## Model config
+
+Supported environment variables:
+
+- `OPENAI_API_KEY`
+- `PRINCESS_OPENAI_MODEL`
+- `PRINCESS_OPENAI_BASE_URL`
+- `PRINCESS_OPENAI_REASONING_EFFORT`
+- `PRINCESS_OPENAI_TIMEOUT_MS`
+- `PRINCESS_OPENAI_MAX_DOSSIERS_PER_CALL`
 
 ## Repo layout
 

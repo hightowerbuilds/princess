@@ -2,6 +2,7 @@ export type PrincessDecision = "rename" | "keep" | "ignore";
 export type VerificationStatus = "passed" | "partial" | "failed" | "skipped";
 export type RewriteKind = "import" | "config" | "script" | "other";
 export type RewriteStatus = "updated" | "skipped" | "failed";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface RepoSummary {
   rootName: string;
@@ -27,6 +28,15 @@ export interface ModelThresholds {
   minConfidence: number;
   maxNameLength: number;
   maxSegments: number;
+}
+
+export interface OpenAIModelOptions {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  reasoningEffort?: ReasoningEffort;
+  timeoutMs?: number;
+  maxDossiersPerCall?: number;
 }
 
 export interface RenameProposal {
@@ -76,6 +86,11 @@ export interface RenamePlan {
   createdAt: string;
   thresholds: ModelThresholds;
   proposals: PlannedRename[];
+  inference?: {
+    engineRequested: string;
+    engineUsed: string;
+    warnings: string[];
+  };
 }
 
 export interface RunManifest extends RenamePlan {
