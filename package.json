@@ -3,12 +3,17 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "engines": {
+    "bun": ">=1.3.10"
+  },
   "bin": {
     "princess": "./src--cli-and-pipeline/cli.ts"
   },
   "scripts": {
     "start": "bun run src--cli-and-pipeline/cli.ts",
     "dry-run:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run",
-    "dry-run:fixture:json": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json"
+    "dry-run:fixture:json": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json",
+    "apply:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --force",
+    "verify:fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/sample-repo-princess"
   }
 }

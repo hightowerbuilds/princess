@@ -155,11 +155,16 @@ export async function buildRenamePlan(
 }
 
 export async function buildRunManifest(
-  _plan: RenamePlan,
+  plan: RenamePlan,
 ): Promise<RunManifest> {
-  throw new Error(
-    "Not implemented yet. This stage should record applied renames, reference rewrites, and verification outcomes.",
-  );
+  return {
+    ...plan,
+    rewrites: [],
+    verification: {
+      status: "skipped",
+      checks: [],
+    },
+  };
 }
 
 function resolveSiblingCollisions(plan: RenamePlan["proposals"]): void {

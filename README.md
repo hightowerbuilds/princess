@@ -38,6 +38,18 @@ Then it applies a conservative decision rule:
 
 The point is not novelty for its own sake. The point is to make directory purpose legible enough that an AI agent or a human can infer how a repo is organized from the tree itself.
 
+## Install
+
+Princess currently targets Bun.
+
+Local install on this machine:
+
+```bash
+bun link
+```
+
+After that, the `princess` command is available in your shell.
+
 ## Tool
 
 The first version is intentionally narrow:
@@ -52,13 +64,20 @@ Today the executable scaffold implements the dry-run half of that contract:
 - scan a repo
 - build folder dossiers
 - infer rename proposals with the heuristic engine or the OpenAI model adapter
-- emit a rename plan without copying or mutating anything
+- emit a rename plan in dry-run mode
+- create a sibling output repo in apply mode
+- rename approved directories in the copied repo
+- rewrite affected relative imports in the copied repo
+- write `.princess/rename-plan.json` and `.princess/run-manifest.json`
 
 The current CLI supports:
 
 - `--engine heuristic` for deterministic local inference
 - `--engine model` for OpenAI Responses API inference
 - `--engine auto` to try the model path first and fall back to heuristics
+- `--dry-run` to analyze without writing
+- `--force` to replace an existing output repo
+- `--preserve-git` to copy the source `.git` directory into the output repo
 
 ## Current v0 focus
 
@@ -107,6 +126,18 @@ At this point, running Princess against this repo in heuristic mode yields zero 
 bun run src--cli-and-pipeline/cli.ts optimize . --dry-run
 ```
 
+Apply mode:
+
+```bash
+bun run src--cli-and-pipeline/cli.ts optimize .
+```
+
+Verify an output repo:
+
+```bash
+bun run src--cli-and-pipeline/cli.ts verify ../princess-princess
+```
+
 JSON mode:
 
 ```bash
@@ -146,13 +177,16 @@ What exists now:
 - heuristic inference
 - OpenAI model-backed inference with structured JSON output
 - dry-run planning and reporting
+- copied output repo generation
+- applied directory renames in the output repo
+- relative import rewriting in the output repo
+- `.princess` manifest artifacts in the output repo
 
 What does not exist yet:
 
-- copied output repo generation
-- applied renames in the copied repo
-- reference rewriting in the copied repo
-- verification manifest written to `.princess/`
+- config-path rewriting beyond relative import updates
+- framework-aware verification like `tsc`, `vite build`, or `next lint`
+- a packaged release beyond local Bun linking
 
 ## Repo layout
 

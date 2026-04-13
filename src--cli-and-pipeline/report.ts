@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { FolderDossier, RenamePlan, RepoSummary } from "./contracts";
+import type { FolderDossier, RenamePlan, RepoSummary, RunManifest } from "./contracts";
 
 export interface DryRunReportInput {
   engine: string;
@@ -82,6 +82,52 @@ export function formatDryRunReport(input: DryRunReportInput): string {
       lines.push(`- ${proposal.relativePath}: ${proposal.reason}`);
     }
   }
+
+  return lines.join("\n");
+}
+
+export function formatApplyReport(input: {
+  sourceRepoPath: string;
+  outputRepoPath: string;
+  manifest: RunManifest;
+}): string {
+  const lines: string[] = [];
+  const applied = input.manifest.proposals.filter((proposal) => proposal.applied);
+
+  lines.push("Princess apply");
+  lines.push("");
+  lines.push(`Source: ${input.sourceRepoPath}`);
+  lines.push(`Output: ${input.outputRepoPath}`);
+  lines.push(
+    `Engine: ${input.manifest.inference?.engineUsed ?? "unknown"}${input.manifest.inference?.engineRequested && input.manifest.inference.engineRequested !== input.manifest.inference.engineUsed ? ` (requested ${input.manifest.inference.engineRequested})` : ""}`,
+  );
+  lines.push(`Applied renames: ${applied.length}`);
+  lines.push(`Updated files: ${input.manifest.rewrites.filter((record) => record.status === "updated").length}`);
+  lines.push(`Verification: ${input.manifest.verification.status}`);
+
+  if (applied.length > 0) {
+    lines.push("");
+    lines.push("Applied:");
+
+    for (const proposal of applied) {
+      const targetPath = path.posix.join(parentPathFor(proposal.relativePath), proposal.proposedName);
+      lines.push(`- ${proposal.relativePath} -> ${targetPath}`);
+    }
+  }
+
+  if (input.manifest.rewrites.length > 0) {
+    lines.push("");
+    lines.push("Rewrites:");
+
+    for (const record of input.manifest.rewrites) {
+      lines.push(`- ${record.filePath}: ${record.details ?? record.status}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("Artifacts:");
+  lines.push(`- ${path.join(input.outputRepoPath, ".princess", "rename-plan.json")}`);
+  lines.push(`- ${path.join(input.outputRepoPath, ".princess", "run-manifest.json")}`);
 
   return lines.join("\n");
 }

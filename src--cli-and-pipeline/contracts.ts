@@ -58,6 +58,11 @@ export interface RewriteRecord {
   details?: string;
 }
 
+export interface ApplyOptions {
+  force?: boolean;
+  preserveGit?: boolean;
+}
+
 export interface VerificationCheck {
   name: string;
   status: "passed" | "failed" | "skipped";

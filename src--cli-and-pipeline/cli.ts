@@ -2,9 +2,10 @@
 
 import { stat, readFile } from "node:fs/promises";
 import path from "node:path";
+import { executeRenamePlan } from "./apply.ts";
 import { analyzeRepository } from "./discovery.ts";
 import { buildRenamePlan, resolveThresholds } from "./pipeline.ts";
-import { formatDryRunReport } from "./report.ts";
+import { formatApplyReport, formatDryRunReport } from "./report.ts";
 import type { RunManifest } from "./contracts";
 
 type CommandName = "optimize" | "verify";
@@ -103,7 +104,9 @@ async function runOptimize(parsed: ParsedCommand): Promise<void> {
     },
   });
 
-  if (parsed.flags.json) {
+  const isDryRun = Boolean(parsed.flags["dry-run"]);
+
+  if (isDryRun && parsed.flags.json) {
     console.log(
       JSON.stringify(
         {
@@ -124,14 +127,35 @@ async function runOptimize(parsed: ParsedCommand): Promise<void> {
     return;
   }
 
+  if (isDryRun) {
+    console.log(
+      formatDryRunReport({
+        engine,
+        sourceRepoPath,
+        outputRepoPath,
+        repoSummary,
+        dossiers,
+        plan,
+      }),
+    );
+    return;
+  }
+
+  const manifest = await executeRenamePlan(plan, {
+    force: Boolean(parsed.flags.force),
+    preserveGit: Boolean(parsed.flags["preserve-git"]),
+  });
+
+  if (parsed.flags.json) {
+    console.log(JSON.stringify(manifest, null, 2));
+    return;
+  }
+
   console.log(
-    formatDryRunReport({
-      engine,
+    formatApplyReport({
       sourceRepoPath,
       outputRepoPath,
-      repoSummary,
-      dossiers,
-      plan,
+      manifest,
     }),
   );
 }
@@ -148,9 +172,7 @@ async function runVerify(parsed: ParsedCommand): Promise<void> {
   const raw = await readFile(manifestPath, "utf8").catch(() => "");
 
   if (!raw) {
-    throw new Error(
-      `No run manifest found at ${manifestPath}. Verify becomes useful after apply mode exists.`,
-    );
+    throw new Error(`No run manifest found at ${manifestPath}.`);
   }
 
   const manifest = JSON.parse(raw) as RunManifest;
@@ -248,11 +270,11 @@ function printUsage(): void {
   console.log(`Princess
 
 Usage:
-  princess optimize <repo> [--dry-run] [--json] [--engine heuristic|auto|model]
+  princess optimize <repo> [--dry-run] [--json] [--force] [--preserve-git] [--engine heuristic|auto|model]
   princess verify <repo> [--json]
 
 Notes:
-  - This scaffold currently runs in dry-run mode only.
+  - optimize applies changes unless --dry-run is present.
   - --engine model uses OPENAI_API_KEY with the Responses API.
   - --engine auto tries the model path first and falls back to heuristics.
 `);
