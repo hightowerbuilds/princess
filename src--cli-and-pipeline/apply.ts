@@ -12,6 +12,7 @@ import path from "node:path";
 import type {
   ApplyOptions,
   PlannedRename,
+  ProgressCallback,
   RenamePlan,
   RewriteRecord,
   RunManifest,
@@ -35,24 +36,48 @@ const SCRIPT_CONFIG_FILE_PATTERN =
 export async function executeRenamePlan(
   plan: RenamePlan,
   options: ApplyOptions = {},
+  onProgress?: ProgressCallback,
 ): Promise<RunManifest> {
+  if (onProgress) {
+    onProgress({ type: "apply", phase: "copy", current: 0, total: 1, currentItem: plan.outputRepoPath });
+  }
   await prepareOutputRepo(plan, options);
+  if (onProgress) {
+    onProgress({ type: "apply", phase: "copy", current: 1, total: 1, currentItem: plan.outputRepoPath });
+  }
 
   const proposals = clonePlannedRenames(plan.proposals);
-  await applyDirectoryRenames(plan.outputRepoPath, proposals);
+  const appliedCount = proposals.filter((p) => p.applied).length;
 
+  if (onProgress) {
+    onProgress({ type: "apply", phase: "rename", current: 0, total: appliedCount, currentItem: "" });
+  }
+  await applyDirectoryRenames(plan.outputRepoPath, proposals, onProgress);
+
+  if (onProgress) {
+    onProgress({ type: "apply", phase: "rewrite-imports", current: 0, total: 0, currentItem: "" });
+  }
   const importRewrites = await rewriteRelativeImports({
     sourceRepoPath: plan.sourceRepoPath,
     outputRepoPath: plan.outputRepoPath,
     proposals,
+    onProgress,
   });
+
+  if (onProgress) {
+    onProgress({ type: "apply", phase: "rewrite-configs", current: 0, total: 0, currentItem: "" });
+  }
   const configRewrites = await rewriteConfigPaths({
     sourceRepoPath: plan.sourceRepoPath,
     outputRepoPath: plan.outputRepoPath,
     proposals,
+    onProgress,
   });
   const rewrites = [...importRewrites, ...configRewrites];
 
+  if (onProgress) {
+    onProgress({ type: "apply", phase: "verify", current: 0, total: 3, currentItem: "" });
+  }
   const verification = await verifyOutputRepo(plan.outputRepoPath, proposals, rewrites);
 
   const manifest: RunManifest = {
@@ -99,11 +124,13 @@ async function prepareOutputRepo(
 async function applyDirectoryRenames(
   outputRepoPath: string,
   proposals: PlannedRename[],
+  onProgress?: ProgressCallback,
 ): Promise<void> {
   const appliedRenames = proposals
     .filter((proposal) => proposal.applied)
     .sort((left, right) => depthOf(right.relativePath) - depthOf(left.relativePath));
 
+  let renameIndex = 0;
   for (const proposal of appliedRenames) {
     const currentRelativePath = proposal.relativePath;
     const targetRelativePath = targetRelativePathForProposal(proposal);
@@ -138,6 +165,11 @@ async function applyDirectoryRenames(
       proposal.applied = false;
       proposal.reason = `Rename failed for ${currentRelativePath}: ${error instanceof Error ? error.message : String(error)}`;
     }
+
+    renameIndex += 1;
+    if (onProgress) {
+      onProgress({ type: "apply", phase: "rename", current: renameIndex, total: appliedRenames.length, currentItem: currentRelativePath });
+    }
   }
 }
 
@@ -145,12 +177,14 @@ async function rewriteRelativeImports(input: {
   sourceRepoPath: string;
   outputRepoPath: string;
   proposals: PlannedRename[];
+  onProgress?: ProgressCallback;
 }): Promise<RewriteRecord[]> {
   const records: RewriteRecord[] = [];
   const renameEntries = buildRenameEntries(input.proposals);
   const sourceFiles = await walkFiles(input.sourceRepoPath);
 
-  for (const absoluteSourcePath of sourceFiles) {
+  for (let fileIndex = 0; fileIndex < sourceFiles.length; fileIndex++) {
+    const absoluteSourcePath = sourceFiles[fileIndex];
     const relativeSourcePath = normalizePosixPath(
       path.relative(input.sourceRepoPath, absoluteSourcePath),
     );
@@ -189,6 +223,10 @@ async function rewriteRelativeImports(input: {
       status: "updated",
       details: `Updated ${rewriteResult.rewrites} relative module specifier${rewriteResult.rewrites === 1 ? "" : "s"}.`,
     });
+
+    if (input.onProgress) {
+      input.onProgress({ type: "apply", phase: "rewrite-imports", current: records.length, total: sourceFiles.length, currentItem: newRelativePath });
+    }
   }
 
   return records;
@@ -198,6 +236,7 @@ async function rewriteConfigPaths(input: {
   sourceRepoPath: string;
   outputRepoPath: string;
   proposals: PlannedRename[];
+  onProgress?: ProgressCallback;
 }): Promise<RewriteRecord[]> {
   const records: RewriteRecord[] = [];
   const renameEntries = buildRenameEntries(input.proposals);

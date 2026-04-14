@@ -17,6 +17,13 @@
     "verify:fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/sample-repo-princess",
     "dry-run:config-fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/config-rewrite-repo --dry-run",
     "apply:config-fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/config-rewrite-repo --force",
-    "verify:config-fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/config-rewrite-repo-princess"
+    "verify:config-fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/config-rewrite-repo-princess",
+    "tui:fixture": "bun run src--cli-and-pipeline/cli.ts tui fixtures--sample-repos/sample-repo"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.12"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12"
   }
 }

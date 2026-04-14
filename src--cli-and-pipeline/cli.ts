@@ -8,7 +8,7 @@ import { buildRenamePlan, resolveThresholds } from "./pipeline.ts";
 import { formatApplyReport, formatDryRunReport } from "./report.ts";
 import type { RunManifest } from "./contracts";
 
-type CommandName = "optimize" | "verify";
+type CommandName = "optimize" | "verify" | "tui";
 type FlagValue = boolean | number | string | undefined;
 
 interface ParsedCommand {
@@ -32,6 +32,11 @@ async function main(): Promise<void> {
 
   if (parsed.command === "verify") {
     await runVerify(parsed);
+    return;
+  }
+
+  if (parsed.command === "tui") {
+    await runTuiCommand(parsed);
     return;
   }
 
@@ -203,7 +208,8 @@ function parseCommand(argv: string[]): ParsedCommand {
 
   if (
     commandCandidate === "optimize" ||
-    commandCandidate === "verify"
+    commandCandidate === "verify" ||
+    commandCandidate === "tui"
   ) {
     result.command = commandCandidate;
   } else if (commandCandidate) {
@@ -266,17 +272,35 @@ function isPathInside(parentPath: string, childPath: string): boolean {
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
+async function runTuiCommand(parsed: ParsedCommand): Promise<void> {
+  const repoArg = parsed.positionals[0];
+
+  const engine = String(parsed.flags.engine ?? "heuristic");
+  const resolvedEngine =
+    engine === "model" || engine === "auto" || engine === "heuristic"
+      ? engine
+      : ("heuristic" as const);
+
+  const outputPath = parsed.flags.out ? String(parsed.flags.out) : undefined;
+
+  const { runTui } = await import("../src--tui-and-renderer/tui.ts");
+  await runTui({ repoPath: repoArg, engine: resolvedEngine, outputPath });
+}
+
 function printUsage(): void {
   console.log(`Princess
 
 Usage:
   princess optimize <repo> [--dry-run] [--json] [--force] [--preserve-git] [--engine heuristic|auto|model]
   princess verify <repo> [--json]
+  princess tui [repo] [--engine heuristic|auto|model] [--out <path>]
 
 Notes:
   - optimize applies changes unless --dry-run is present.
   - --engine model uses OPENAI_API_KEY with the Responses API.
   - --engine auto tries the model path first and falls back to heuristics.
+  - tui launches the interactive terminal UI.
+  - tui without a repo arg starts the app shell with repo picker.
 `);
 }
 

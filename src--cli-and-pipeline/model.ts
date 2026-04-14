@@ -3,6 +3,7 @@ import type {
   FolderDossier,
   ModelThresholds,
   OpenAIModelOptions,
+  ProgressCallback,
   RenameProposal,
   RepoSummary,
 } from "./contracts";
@@ -69,6 +70,7 @@ interface ModelInferenceInput {
 
 export async function inferModelRenameProposals(
   input: ModelInferenceInput,
+  onProgress?: ProgressCallback,
 ): Promise<{ proposals: RenameProposal[]; rawModelResponse: string }> {
   const config = resolveOpenAIModelConfig(input.modelOptions);
   const schema = await loadModelOutputSchema();
@@ -76,7 +78,19 @@ export async function inferModelRenameProposals(
   const responses: string[] = [];
   const proposals: RenameProposal[] = [];
 
-  for (const chunk of chunks) {
+  for (let index = 0; index < chunks.length; index++) {
+    const chunk = chunks[index];
+
+    if (onProgress) {
+      onProgress({
+        type: "inference",
+        totalChunks: chunks.length,
+        completedChunks: index,
+        currentChunkSize: chunk.length,
+        engineUsed: "model",
+      });
+    }
+
     const result = await requestModelChunk({
       repoSummary: input.repoSummary,
       dossiers: chunk,
@@ -87,6 +101,16 @@ export async function inferModelRenameProposals(
 
     responses.push(result.rawResponse);
     proposals.push(...result.parsed.proposals);
+  }
+
+  if (onProgress) {
+    onProgress({
+      type: "inference",
+      totalChunks: chunks.length,
+      completedChunks: chunks.length,
+      currentChunkSize: 0,
+      engineUsed: "model",
+    });
   }
 
   return {

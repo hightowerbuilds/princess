@@ -9,5 +9,5 @@
     "types": ["bun"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src--cli-and-pipeline/**/*.ts"]
+  "include": ["src--cli-and-pipeline/**/*.ts", "src--tui-and-renderer/**/*.ts"]
 }

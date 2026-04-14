@@ -2,6 +2,7 @@ import type {
   FolderDossier,
   ModelThresholds,
   OpenAIModelOptions,
+  ProgressCallback,
   RenamePlan,
   RenameProposal,
   RepoSummary,
@@ -65,6 +66,7 @@ export function resolveThresholds(
 
 export async function inferRenameProposals(
   context: PipelineContext,
+  onProgress?: ProgressCallback,
 ): Promise<InferenceResult> {
   const engine = context.engine ?? "heuristic";
 
@@ -74,7 +76,7 @@ export async function inferRenameProposals(
       dossiers: context.dossiers,
       thresholds: context.thresholds,
       modelOptions: context.modelOptions,
-    });
+    }, onProgress);
 
     return {
       ...result,
@@ -90,7 +92,7 @@ export async function inferRenameProposals(
         dossiers: context.dossiers,
         thresholds: context.thresholds,
         modelOptions: context.modelOptions,
-      });
+      }, onProgress);
 
       return {
         ...result,
@@ -98,6 +100,9 @@ export async function inferRenameProposals(
         warnings: [],
       };
     } catch {
+      if (onProgress) {
+        onProgress({ type: "inference", totalChunks: 1, completedChunks: 1, currentChunkSize: 0, engineUsed: "heuristic" });
+      }
       return {
         proposals: inferHeuristicRenameProposals(context.dossiers, context.thresholds),
         engineUsed: "heuristic",
@@ -108,6 +113,9 @@ export async function inferRenameProposals(
     }
   }
 
+  if (onProgress) {
+    onProgress({ type: "inference", totalChunks: 1, completedChunks: 1, currentChunkSize: context.dossiers.length, engineUsed: "heuristic" });
+  }
   return {
     proposals: inferHeuristicRenameProposals(context.dossiers, context.thresholds),
     engineUsed: "heuristic",
@@ -117,12 +125,13 @@ export async function inferRenameProposals(
 
 export async function buildRenamePlan(
   context: PipelineContext,
+  onProgress?: ProgressCallback,
 ): Promise<RenamePlan> {
   const thresholds = resolveThresholds(context.thresholds);
   const inference = await inferRenameProposals({
     ...context,
     thresholds,
-  });
+  }, onProgress);
 
   const preliminaryPlan = inference.proposals.map((proposal) => ({
     relativePath: proposal.relativePath,

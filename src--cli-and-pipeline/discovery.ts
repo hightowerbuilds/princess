@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { FolderDossier, RepoSummary } from "./contracts";
+import type { FolderDossier, ProgressCallback, RepoSummary } from "./contracts";
 
 const IGNORED_DIRECTORIES = new Set([
   ".git",
@@ -76,6 +76,7 @@ interface FileInspection {
 export async function analyzeRepository(
   sourceRepoPath: string,
   options: AnalyzeRepositoryOptions = {},
+  onProgress?: ProgressCallback,
 ): Promise<AnalyzeRepositoryResult> {
   const rootStats = await stat(sourceRepoPath);
 
@@ -83,10 +84,16 @@ export async function analyzeRepository(
     throw new Error(`Source path is not a directory: ${sourceRepoPath}`);
   }
 
-  const rootNode = await scanDirectory(sourceRepoPath, sourceRepoPath, 0, {
-    includeHidden: options.includeHidden ?? false,
-    maxDepth: options.maxDepth ?? Number.POSITIVE_INFINITY,
-  });
+  const scanContext: ScanContext = {
+    options: {
+      includeHidden: options.includeHidden ?? false,
+      maxDepth: options.maxDepth ?? Number.POSITIVE_INFINITY,
+    },
+    onProgress,
+    scannedCount: 0,
+  };
+
+  const rootNode = await scanDirectory(sourceRepoPath, sourceRepoPath, 0, scanContext);
 
   const dossiers = flattenDirectoryTree(rootNode).filter(
     (entry) => entry.relativePath !== ".",
@@ -98,11 +105,17 @@ export async function analyzeRepository(
   };
 }
 
+interface ScanContext {
+  options: Required<AnalyzeRepositoryOptions>;
+  onProgress?: ProgressCallback;
+  scannedCount: number;
+}
+
 async function scanDirectory(
   absPath: string,
   rootPath: string,
   depth: number,
-  options: Required<AnalyzeRepositoryOptions>,
+  context: ScanContext,
 ): Promise<DirectoryNode> {
   const relativePath = normalizeRelativePath(path.relative(rootPath, absPath));
   const currentName = relativePath === "." ? path.basename(absPath) : path.basename(relativePath);
@@ -124,17 +137,26 @@ async function scanDirectory(
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (shouldSkipDirectory(entry.name, options.includeHidden)) {
+      if (shouldSkipDirectory(entry.name, context.options.includeHidden)) {
         continue;
       }
 
-      if (depth + 1 > options.maxDepth) {
+      if (depth + 1 > context.options.maxDepth) {
         continue;
       }
 
       const childPath = path.join(absPath, entry.name);
-      const childNode = await scanDirectory(childPath, rootPath, depth + 1, options);
+      const childNode = await scanDirectory(childPath, rootPath, depth + 1, context);
       childNodes.push(childNode);
+
+      context.scannedCount += 1;
+      if (context.onProgress) {
+        context.onProgress({
+          type: "scan",
+          directoriesScanned: context.scannedCount,
+          currentPath: normalizeRelativePath(path.relative(rootPath, childPath)),
+        });
+      }
       mergeCounts(extensionCounts, childNode.extensionCounts);
 
       for (const hint of childNode.frameworkHints) {

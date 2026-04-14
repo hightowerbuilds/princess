@@ -102,3 +102,30 @@ export interface RunManifest extends RenamePlan {
   rewrites: RewriteRecord[];
   verification: VerificationSummary;
 }
+
+// Progress events for TUI integration
+
+export interface ScanProgressEvent {
+  type: "scan";
+  directoriesScanned: number;
+  currentPath: string;
+}
+
+export interface InferenceProgressEvent {
+  type: "inference";
+  totalChunks: number;
+  completedChunks: number;
+  currentChunkSize: number;
+  engineUsed: string;
+}
+
+export interface ApplyProgressEvent {
+  type: "apply";
+  phase: "copy" | "rename" | "rewrite-imports" | "rewrite-configs" | "verify";
+  current: number;
+  total: number;
+  currentItem: string;
+}
+
+export type ProgressEvent = ScanProgressEvent | InferenceProgressEvent | ApplyProgressEvent;
+export type ProgressCallback = (event: ProgressEvent) => void;
