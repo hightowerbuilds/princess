@@ -931,6 +931,181 @@ export function createBounce(config?: BounceConfig): {
   return { value, trigger, isActive: active };
 }
 
+// ── Glow Pulse ────────────────────────────────────────────────────────────
+
+export interface GlowConfig {
+  /** Full cycle period in ms. Default: 2000. */
+  period?: number;
+  /** Base (dim) color. Default: [255, 100, 50]. */
+  baseColor?: [number, number, number];
+  /** Glow (bright) color. Default: [255, 200, 100]. */
+  glowColor?: [number, number, number];
+}
+
+/**
+ * Sinusoidal color pulse between two RGB values.
+ *
+ * Like `createBreathingPulse` but produces an RGB triple instead
+ * of a scalar. Use for warning indicators, status highlights, or
+ * any element that needs an attention-drawing color cycle.
+ *
+ * ```ts
+ * const glow = createGlowPulse({
+ *   baseColor: [255, 80, 60],
+ *   glowColor: [255, 200, 100],
+ * });
+ * glow.start();
+ *
+ * // In rendering:
+ * const [r, g, b] = glow.rgb();
+ * ```
+ */
+export function createGlowPulse(config?: GlowConfig): {
+  rgb: Accessor<[number, number, number]>;
+  start: () => void;
+  stop: () => void;
+  isActive: Accessor<boolean>;
+} {
+  const period = config?.period ?? 2000;
+  const baseColor = config?.baseColor ?? [255, 100, 50];
+  const glowColor = config?.glowColor ?? [255, 200, 100];
+
+  const [value, setValue] = createSignal<[number, number, number]>([...baseColor] as [number, number, number]);
+  const [active, setActive] = createSignal(false);
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let startTime = 0;
+
+  function tick() {
+    const elapsed = Date.now() - startTime;
+    const phase = (elapsed / period) * Math.PI * 2;
+    const t = (Math.cos(phase) + 1) / 2; // smooth 0→1→0
+
+    setValue(() => [
+      Math.round(baseColor[0] + (glowColor[0] - baseColor[0]) * t),
+      Math.round(baseColor[1] + (glowColor[1] - baseColor[1]) * t),
+      Math.round(baseColor[2] + (glowColor[2] - baseColor[2]) * t),
+    ] as [number, number, number]);
+  }
+
+  function start() {
+    if (timer !== null) return;
+    startTime = Date.now();
+    setActive(true);
+    timer = setInterval(tick, 16);
+  }
+
+  function stop() {
+    if (timer === null) return;
+    clearInterval(timer);
+    timer = null;
+    setActive(false);
+    setValue(() => [...baseColor] as [number, number, number]);
+  }
+
+  onCleanup(stop);
+
+  return { rgb: value, start, stop, isActive: active };
+}
+
+// ── Marquee ───────────────────────────────────────────────────────────────
+
+export interface MarqueeConfig {
+  /** Scroll speed in characters per frame. Default: 0.5. */
+  speed?: number;
+  /** Pause duration at each end in ms. Default: 1500. */
+  pauseMs?: number;
+}
+
+/**
+ * Oscillating text scroll for names that overflow their container.
+ *
+ * When `textWidth > viewWidth`, the offset oscillates back and
+ * forth between 0 and the overflow amount, pausing briefly at
+ * each end. When text fits, offset stays at 0.
+ *
+ * ```ts
+ * const marquee = createMarquee(
+ *   () => stringWidth(longName),
+ *   () => 20,
+ * );
+ *
+ * // In rendering:
+ * const offset = Math.round(marquee.offset());
+ * const visible = longName.slice(offset, offset + 20);
+ * ```
+ */
+export function createMarquee(
+  textWidth: Accessor<number>,
+  viewWidth: Accessor<number>,
+  config?: MarqueeConfig,
+): {
+  offset: Accessor<number>;
+  isActive: Accessor<boolean>;
+} {
+  const speed = config?.speed ?? 0.5;
+  const pauseMs = config?.pauseMs ?? 1500;
+
+  const [offset, setOffset] = createSignal(0);
+  const [active, setActive] = createSignal(false);
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let direction = 1;
+  let pauseUntil = 0;
+
+  function tick() {
+    const overflow = textWidth() - viewWidth();
+    if (overflow <= 0) {
+      setOffset(0);
+      return;
+    }
+
+    const now = Date.now();
+    if (now < pauseUntil) return;
+
+    setOffset((prev) => {
+      let next = prev + direction * speed;
+      if (next >= overflow) {
+        next = overflow;
+        direction = -1;
+        pauseUntil = Date.now() + pauseMs;
+      } else if (next <= 0) {
+        next = 0;
+        direction = 1;
+        pauseUntil = Date.now() + pauseMs;
+      }
+      return next;
+    });
+  }
+
+  function startAnimation() {
+    if (timer !== null) return;
+    direction = 1;
+    pauseUntil = Date.now() + pauseMs;
+    setActive(true);
+    timer = setInterval(tick, 16);
+  }
+
+  function stopAnimation() {
+    if (timer === null) return;
+    clearInterval(timer);
+    timer = null;
+    setActive(false);
+    setOffset(0);
+  }
+
+  createEffect(() => {
+    const overflow = textWidth() - viewWidth();
+    if (overflow > 0 && !active()) {
+      startAnimation();
+    } else if (overflow <= 0 && active()) {
+      stopAnimation();
+    }
+  });
+
+  onCleanup(stopAnimation);
+
+  return { offset, isActive: active };
+}
+
 // ── Utilities ────────────────────────────────────────────────────────────
 
 /**

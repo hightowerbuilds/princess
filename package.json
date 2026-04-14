@@ -22,7 +22,8 @@
     "test:typeset": "bun run src--tui-and-renderer/typeset.test.ts",
     "test:motion": "bun --conditions=browser run src--tui-and-renderer/motion.test.ts",
     "test:visualize": "bun run src--tui-and-renderer/visualize.test.ts",
-    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize"
+    "test:aesthetics": "bun run src--tui-and-renderer/aesthetics.test.ts",
+    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics"
   },
   "dependencies": {
     "solid-js": "^1.9.12"

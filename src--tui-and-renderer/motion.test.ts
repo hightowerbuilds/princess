@@ -16,6 +16,8 @@ import {
   createCrossfade,
   createFold,
   createBounce,
+  createGlowPulse,
+  createMarquee,
   clamp,
   lerp,
   mapRange,
@@ -427,6 +429,80 @@ scheduleTest("createBounce", (done) => {
         }, 300);
       }, 300);
     }, 50);
+  });
+});
+
+// ── createGlowPulse ───────────────────────────────────────────────────────
+
+scheduleTest("createGlowPulse", (done) => {
+  createRoot((dispose) => {
+    const glow = createGlowPulse({
+      period: 200,
+      baseColor: [255, 0, 0],
+      glowColor: [0, 255, 0],
+    });
+
+    assertEq(glow.isActive(), false, "not active before start");
+    const initial = glow.rgb();
+    assertEq(initial[0], 255, "starts at base R");
+    assertEq(initial[1], 0, "starts at base G");
+
+    glow.start();
+    assertEq(glow.isActive(), true, "active after start");
+
+    setTimeout(() => {
+      const mid = glow.rgb();
+      // After ~50ms in a 200ms period, color should be shifting
+      assert(
+        mid[0] !== 255 || mid[1] !== 0,
+        `color is changing: [${mid.join(",")}]`,
+      );
+
+      glow.stop();
+      assertEq(glow.isActive(), false, "not active after stop");
+      const stopped = glow.rgb();
+      assertEq(stopped[0], 255, "resets to base R on stop");
+      assertEq(stopped[1], 0, "resets to base G on stop");
+
+      dispose();
+      done();
+    }, 50);
+  });
+});
+
+// ── createMarquee ─────────────────────────────────────────────────────────
+
+scheduleTest("createMarquee", (done) => {
+  createRoot((dispose) => {
+    const [tw, setTw] = createSignal(10);
+    const [vw, setVw] = createSignal(20);
+    const marquee = createMarquee(tw, vw, { speed: 1, pauseMs: 50 });
+
+    // Text fits view — no scrolling
+    assertEq(marquee.offset(), 0, "no offset when text fits");
+    assertEq(marquee.isActive(), false, "not active when text fits");
+
+    // Make text overflow
+    setTw(30);
+
+    setTimeout(() => {
+      assertEq(marquee.isActive(), true, "active when overflowing");
+
+      // After pause (50ms) + some scroll time, offset should be > 0
+      setTimeout(() => {
+        const off = marquee.offset();
+        assert(off > 0, `offset advancing: ${off.toFixed(1)}`);
+
+        // Shrink text to fit — should deactivate
+        setTw(15);
+        setTimeout(() => {
+          assertEq(marquee.isActive(), false, "deactivates when text fits");
+          assertEq(marquee.offset(), 0, "offset resets to 0");
+          dispose();
+          done();
+        }, 50);
+      }, 150);
+    }, 20);
   });
 });
 
