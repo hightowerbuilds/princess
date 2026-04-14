@@ -1,0 +1,6 @@
+# Force SolidJS client build (with reactive scheduling).
+# Without this, Bun resolves to solid-js/dist/server.js which
+# disables createEffect and reactive updates.
+#
+# Usage: bun --conditions=browser run <script>
+# Or set BUN_CONFIG_CONDITIONS=browser in the environment.

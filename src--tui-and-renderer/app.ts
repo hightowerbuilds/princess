@@ -39,8 +39,10 @@ export async function runApp(state: TuiState): Promise<void> {
   while (true) {
     resetFullState(state);
     state.setScreen("home");
+    state.idlePulse.start();
 
     const menuChoice = await waitForHomeSelection(state);
+    state.idlePulse.stop();
     if (!menuChoice) return; // quit
 
     state.setActiveFunction(menuChoice as "optimize" | "verify");
@@ -277,6 +279,9 @@ function handleRepoInputKey(
 async function runOptimizeFlow(state: TuiState): Promise<void> {
   // Welcome: wait for Enter
   state.setStage("welcome");
+  state.welcomeTypewriter.reset();
+  // Trigger the typewriter by briefly setting count to 0 then back
+  // (the state initializes with count=8; reset clears the animation)
   const welcomeAction = await waitForKey(
     (key) => key.name === "enter" || key.name === "q" || key.name === "escape",
   );
@@ -417,7 +422,11 @@ function waitForReviewApproval(state: TuiState): Promise<boolean> {
       switch (key.name) {
         case "down":
         case "j": {
-          const next = Math.min(cursor + 1, items.length - 1);
+          if (cursor >= items.length - 1) {
+            state.reviewBounce.trigger(1.5); // elastic overscroll
+            break;
+          }
+          const next = cursor + 1;
           state.setReviewCursor(next);
           if (next >= offset + listHeight) {
             state.setReviewScrollOffset(next - listHeight + 1);
@@ -426,7 +435,11 @@ function waitForReviewApproval(state: TuiState): Promise<boolean> {
         }
         case "up":
         case "k": {
-          const prev = Math.max(cursor - 1, 0);
+          if (cursor <= 0) {
+            state.reviewBounce.trigger(-1.5); // elastic overscroll
+            break;
+          }
+          const prev = cursor - 1;
           state.setReviewCursor(prev);
           if (prev < offset) {
             state.setReviewScrollOffset(prev);
@@ -435,6 +448,10 @@ function waitForReviewApproval(state: TuiState): Promise<boolean> {
         }
         case "pagedown": {
           const next = Math.min(cursor + listHeight, items.length - 1);
+          if (next === cursor) {
+            state.reviewBounce.trigger(2);
+            break;
+          }
           state.setReviewCursor(next);
           state.setReviewScrollOffset(
             Math.min(next, Math.max(0, items.length - listHeight)),
@@ -443,6 +460,10 @@ function waitForReviewApproval(state: TuiState): Promise<boolean> {
         }
         case "pageup": {
           const prev = Math.max(cursor - listHeight, 0);
+          if (prev === cursor) {
+            state.reviewBounce.trigger(-2);
+            break;
+          }
           state.setReviewCursor(prev);
           state.setReviewScrollOffset(prev);
           break;

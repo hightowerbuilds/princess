@@ -1,5 +1,7 @@
-import { bold, cyan, dim, gray, green, yellow } from "../colors.ts";
+import { bold, cyan, dim, gray, green, yellow, rgb } from "../colors.ts";
 import { centerText, emptyLine, horizontalRule } from "../layout.ts";
+import { breakpoint } from "../typeset-compose.ts";
+import { mapRange } from "../motion.ts";
 import type { TuiState } from "../state.ts";
 
 const LOGO = [
@@ -27,16 +29,24 @@ export const MENU_ITEMS: MenuItem[] = [
 export function renderHome(state: TuiState, cols: number, rows: number): string[] {
   const lines: string[] = [];
   const cursor = state.homeCursor();
-  const ruleWidth = Math.min(cols - 4, 52);
+  const ruleWidth = breakpoint(cols, { compact: cols - 4, standard: 52, wide: 52 });
+  const pulse = state.idlePulse.value();
 
   // Top padding
   const contentHeight = LOGO.length + MENU_ITEMS.length + 12;
   const topPad = Math.max(2, Math.floor((rows - contentHeight) / 2));
   for (let i = 0; i < topPad; i++) lines.push(emptyLine());
 
-  // Logo
+  // Logo — modulated by breathing pulse
+  const logoColor = (text: string) => {
+    const r = Math.round(mapRange(pulse, 0, 1, 60, 80));
+    const g = Math.round(mapRange(pulse, 0, 1, 140, 220));
+    const b = Math.round(mapRange(pulse, 0, 1, 180, 255));
+    return rgb(r, g, b, text);
+  };
+
   for (const line of LOGO) {
-    lines.push(centerText(cyan(line), cols));
+    lines.push(centerText(logoColor(line), cols));
   }
 
   lines.push(emptyLine());

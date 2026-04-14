@@ -6,6 +6,13 @@ import type {
   RunManifest,
   VerificationCheck,
 } from "../src--cli-and-pipeline/contracts.ts";
+import {
+  createBreathingPulse,
+  createCursorTrail,
+  createStaggeredReveal,
+  createBounce,
+  createTypewriterReveal,
+} from "./motion.ts";
 
 export type AppScreen =
   | "home"
@@ -100,6 +107,14 @@ export function createTuiState() {
   );
   const totalProposals = createMemo(() => reviewItems().length);
 
+  // Motion — reactive animation signals
+  const idlePulse = createBreathingPulse({ period: 4000, min: 0.4, max: 1.0 });
+  const reviewCursorTrail = createCursorTrail(reviewCursor, { fadeFrames: 4, maxTrail: 2 });
+  const reviewStagger = createStaggeredReveal(totalProposals, { delay: 25, fadeDuration: 120 });
+  const reviewBounce = createBounce({ duration: 250 });
+  const welcomeSegments = createMemo(() => stage() === "welcome" ? 8 : 0);
+  const welcomeTypewriter = createTypewriterReveal(welcomeSegments, { segmentDelay: 80 });
+
   return {
     screen, setScreen,
     activeFunction, setActiveFunction,
@@ -127,6 +142,8 @@ export function createTuiState() {
     error, setError,
     spinnerTick, setSpinnerTick,
     renameCount, keepCount, totalProposals,
+    // Motion
+    idlePulse, reviewCursorTrail, reviewStagger, reviewBounce, welcomeTypewriter,
   };
 }
 

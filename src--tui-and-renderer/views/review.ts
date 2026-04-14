@@ -1,7 +1,6 @@
-import { bold, cyan, dim, gray, green, red, yellow, inverse } from "../colors.ts";
-import { ARROW_RIGHT, emptyLine, horizontalRule, indent, spinnerFrame } from "../layout.ts";
-import { columns, truncateEnd, truncatePath, breakpoint } from "../typeset-compose.ts";
-import { stringWidth } from "../typeset.ts";
+import { bold, cyan, dim, gray, green, red, yellow, inverse, fg256 } from "../colors.ts";
+import { ARROW_RIGHT, emptyLine, horizontalRule, indent } from "../layout.ts";
+import { columns, truncateEnd, breakpoint } from "../typeset-compose.ts";
 import type { TuiState, ProposalReviewItem } from "../state.ts";
 
 export function renderReview(state: TuiState, cols: number, rows: number): string[] {
@@ -26,25 +25,60 @@ export function renderReview(state: TuiState, cols: number, rows: number): strin
   lines.push(indent(horizontalRule(ruleWidth), 2));
   lines.push(emptyLine());
 
-  // Scrollable list
+  // Scrollable list with stagger + cursor trail + elastic overscroll
   const listHeight = Math.max(rows - 8, 5);
+  const bounceValue = state.reviewBounce.value();
+  const bounceShift = Math.round(bounceValue);
   const visibleItems = items.slice(scrollOffset, scrollOffset + listHeight);
+  const getStaggerOpacity = state.reviewStagger;
+  const getTrailOpacity = state.reviewCursorTrail;
 
-  for (let i = 0; i < visibleItems.length; i++) {
+  // Elastic overscroll: insert/remove blank lines to simulate content shift
+  if (bounceShift > 0) {
+    // Bouncing at bottom — push content up (insert blanks at top)
+    for (let i = 0; i < Math.min(bounceShift, listHeight); i++) {
+      lines.push(emptyLine());
+    }
+  }
+
+  const renderCount = bounceShift !== 0
+    ? Math.max(0, listHeight - Math.abs(bounceShift))
+    : visibleItems.length;
+
+  const startIdx = bounceShift < 0 ? Math.abs(bounceShift) : 0;
+
+  for (let i = startIdx; i < startIdx + renderCount && i < visibleItems.length; i++) {
     const item = visibleItems[i];
     const globalIndex = scrollOffset + i;
     const isCursor = globalIndex === cursor;
-    const line = formatProposalLine(item, isCursor, cols - 4);
+
+    // Staggered reveal: dim items that haven't fully appeared yet
+    const staggerOpacity = getStaggerOpacity(globalIndex);
+
+    // Cursor trail: subtle highlight on recently-visited positions
+    const trailOpacity = getTrailOpacity(globalIndex);
+
+    let line = formatProposalLine(item, isCursor, cols - 4);
+
+    if (staggerOpacity < 1 && !isCursor) {
+      line = dim(line);
+    } else if (trailOpacity > 0 && !isCursor) {
+      // Apply subtle trail highlight using 256-color dim cyan
+      const trailColor = Math.round(236 + trailOpacity * 8); // grayscale 236-244
+      line = fg256(trailColor, line);
+    }
+
     lines.push(indent(line, 2));
   }
 
-  // Pad if fewer items than list height
-  for (let i = visibleItems.length; i < listHeight; i++) {
+  // Pad to fill remaining list height
+  const linesUsed = lines.length - 4; // subtract header lines
+  for (let i = linesUsed; i < listHeight; i++) {
     lines.push(emptyLine());
   }
 
   // Footer
-  lines.push(indent(horizontalRule(Math.min(cols - 4, 70)), 2));
+  lines.push(indent(horizontalRule(ruleWidth), 2));
 
   const keyHints = [
     `${bold("[Space]")} toggle`,

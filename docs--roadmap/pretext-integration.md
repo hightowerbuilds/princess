@@ -10,14 +10,14 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 
 *Goal: Build a Pretext-inspired two-phase layout engine tuned for monospace grids and ANSI escape codes. This replaces the current ad-hoc utilities in `layout.ts` with a principled foundation everything else builds on.*
 
-- [ ] **Segment Preparation (`prepare`):** Parse text into segments (words, whitespace, ANSI escape sequences) in a single pass. Cache segment metadata (visible width, break opportunities, escape code pairs). This is the "prepare" phase — done once per text block, reused across reflows.
-- [ ] **Layout Pass (`layout`):** Pure arithmetic over cached segments. Given a max width, compute line breaks, line widths, and total height without allocating output strings. This is the hot path — must stay under 0.1ms for typical dossier text.
-- [ ] **Materialization (`materialize`):** Convert layout results into actual output strings only when rendering. Separate from layout so the renderer can decide what's visible before paying string-building costs.
-- [ ] **ANSI-Aware Cursors:** Port Pretext's `LayoutCursor` concept (segment index + grapheme offset) so line ranges can be described without string slicing. This enables windowed rendering — only materialize lines inside the viewport.
-- [ ] **Rich Inline Segments:** Support mixed-style inline runs (bold word inside dim sentence) as first-class layout items, analogous to Pretext's `RichInlineItem`. Each segment carries its own ANSI open/close codes. The layout engine wraps correctly across style boundaries without breaking escape sequences.
-- [ ] **Whitespace Modes:** Support `normal` (collapse + wrap), `pre-wrap` (preserve + wrap), and `pre` (preserve + no wrap) — matching Pretext's `whiteSpace` option but for terminal output.
-- [ ] **Double-Width Character Handling:** Detect CJK unified ideographs, fullwidth forms, and emoji via Unicode category. Count as 2 columns in all width calculations. Never break a double-width character across a line boundary.
-- [ ] **Reactive Integration:** Expose layout as a Solid.js `createMemo` — re-derives line breaks only when terminal `columns()` or source text changes. Layout results are signals themselves, so downstream rendering effects fire only on actual layout changes, not on every frame tick.
+- [x] **Segment Preparation (`prepare`):** Parse text into segments (words, whitespace, ANSI escape sequences) in a single pass. Cache segment metadata (visible width, break opportunities, escape code pairs). This is the "prepare" phase — done once per text block, reused across reflows.
+- [x] **Layout Pass (`layout`):** Pure arithmetic over cached segments. Given a max width, compute line breaks, line widths, and total height without allocating output strings. This is the hot path — must stay under 0.1ms for typical dossier text.
+- [x] **Materialization (`materialize`):** Convert layout results into actual output strings only when rendering. Separate from layout so the renderer can decide what's visible before paying string-building costs.
+- [x] **ANSI-Aware Cursors:** Port Pretext's `LayoutCursor` concept (segment index + grapheme offset) so line ranges can be described without string slicing. This enables windowed rendering — only materialize lines inside the viewport.
+- [x] **Rich Inline Segments:** Support mixed-style inline runs (bold word inside dim sentence) as first-class layout items, analogous to Pretext's `RichInlineItem`. Each segment carries its own ANSI open/close codes. The layout engine wraps correctly across style boundaries without breaking escape sequences.
+- [x] **Whitespace Modes:** Support `normal` (collapse + wrap), `pre-wrap` (preserve + wrap), and `pre` (preserve + no wrap) — matching Pretext's `whiteSpace` option but for terminal output.
+- [x] **Double-Width Character Handling:** Detect CJK unified ideographs, fullwidth forms, and emoji via Unicode category. Count as 2 columns in all width calculations. Never break a double-width character across a line boundary.
+- [x] **Reactive Integration:** Expose layout as a Solid.js `createMemo` — re-derives line breaks only when terminal `columns()` or source text changes. Layout results are signals themselves, so downstream rendering effects fire only on actual layout changes, not on every frame tick.
 
 ---
 
@@ -25,15 +25,15 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 
 *Goal: Use the layout engine to gain character-perfect control over text before it hits the screen.*
 
-- [ ] **Smart Variable Wrapping:** Replace basic string slicing with engine-calculated wrapping for "Reasoning" and "Dossier" text blocks. Wrap at word boundaries, respect ANSI codes, and reflow instantly on terminal resize via cached segments.
-- [ ] **Dynamic Truncation (Smart Ellipsis):** Use layout arithmetic to place an ellipsis (`...`) at the optimal point in long paths, preserving the most semantic parts of the string. For paths, keep the first segment and last segment, collapse the middle: `src--cli/...ts/pipeline.ts`.
-- [ ] **Justified Text Blocks:** Implement full-justification for long descriptions by calculating "slack" space per line and distributing it between words for a "printed" aesthetic. Last line of each paragraph left-aligned (standard typographic convention).
+- [x] **Smart Variable Wrapping:** Replace basic string slicing with engine-calculated wrapping for "Reasoning" and "Dossier" text blocks. Wrap at word boundaries, respect ANSI codes, and reflow instantly on terminal resize via cached segments.
+- [x] **Dynamic Truncation (Smart Ellipsis):** Use layout arithmetic to place an ellipsis (`...`) at the optimal point in long paths, preserving the most semantic parts of the string. For paths, keep the first segment and last segment, collapse the middle: `src--cli/...ts/pipeline.ts`.
+- [x] **Justified Text Blocks:** Implement full-justification for long descriptions by calculating "slack" space per line and distributing it between words for a "printed" aesthetic. Last line of each paragraph left-aligned (standard typographic convention).
 - [ ] **Columnar Dossier Views:** Create multi-column layouts where text flows from one column to the next based on calculated heights. Use `walkLineRanges`-style iteration to determine the optimal split point that balances column heights.
-- [ ] **Hanging Indents for Tree Views:** Render directory trees with continuation lines that wrap with a hanging indent aligned to the content start, not the bullet/connector. The layout engine tracks indent depth per block.
-- [ ] **Responsive Breakpoints:** Define layout modes based on terminal width — compact (< 60 cols), standard (60-120), wide (> 120). Solid signals on `columns()` drive which layout strategy activates. Compact mode collapses columns to single-column flow; wide mode adds sidebar panels.
-- [ ] **Box Model Blocks:** Give each text block a box model: padding (inner spacing), margin (outer spacing), and optional border (box-drawing characters). The layout engine subtracts chrome from available width before wrapping content. Nested boxes subtract recursively.
-- [ ] **Variable-Width Line Iteration:** Port Pretext's `layoutNextLineRange()` concept — each line can have a different available width. This enables text flowing around inset panels, sidebars, or decorative elements where the content area isn't a simple rectangle.
-- [ ] **Balanced Text (Shrink-Wrap):** For short text blocks (titles, labels), binary-search for the narrowest width that doesn't increase line count. This avoids the "one orphan word on the last line" problem. Use `walkLineRanges`-style speculative measurement without string allocation.
+- [x] **Hanging Indents for Tree Views:** Render directory trees with continuation lines that wrap with a hanging indent aligned to the content start, not the bullet/connector. The layout engine tracks indent depth per block.
+- [x] **Responsive Breakpoints:** Define layout modes based on terminal width — compact (< 60 cols), standard (60-120), wide (> 120). Solid signals on `columns()` drive which layout strategy activates. Compact mode collapses columns to single-column flow; wide mode adds sidebar panels.
+- [x] **Box Model Blocks:** Give each text block a box model: padding (inner spacing), margin (outer spacing), and optional border (box-drawing characters). The layout engine subtracts chrome from available width before wrapping content. Nested boxes subtract recursively.
+- [x] **Variable-Width Line Iteration:** Port Pretext's `layoutNextLineRange()` concept — each line can have a different available width. This enables text flowing around inset panels, sidebars, or decorative elements where the content area isn't a simple rectangle.
+- [x] **Balanced Text (Shrink-Wrap):** For short text blocks (titles, labels), binary-search for the narrowest width that doesn't increase line count. This avoids the "one orphan word on the last line" problem. Use `walkLineRanges`-style speculative measurement without string allocation.
 - [ ] **Soft Hyphenation:** Insert soft hyphens (`\u00AD`) at syllable boundaries in long words. The layout engine breaks at these points only when necessary, displaying a visible hyphen at the break.
 - [ ] **Ragged-Right Optimization:** For non-justified text, score line-break options by how "ragged" the right edge is (Knuth-Plass style penalty). Pick breaks that minimize variance in line lengths for a calmer visual texture.
 
@@ -43,17 +43,17 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 
 *Goal: Use Solid.js signals to drive frame-by-frame updates of layout-calculated positions.*
 
-- [ ] **"The Typewriter Sweep":** Animate text reveals word-by-word or line-by-line using segment indices and Solid.js timers. A `revealCursor` signal advances through prepared segments; the renderer materializes only segments up to the cursor. ANSI codes for unrevealed text render as dim placeholders.
+- [x] **"The Typewriter Sweep":** Animate text reveals word-by-word or line-by-line using segment indices and Solid.js timers. A `revealCursor` signal advances through prepared segments; the renderer materializes only segments up to the cursor. ANSI codes for unrevealed text render as dim placeholders.
 - [ ] **Smooth Vertical Scrolling:** Implement a "Virtual Viewport" that uses layout to calculate total scrollable height and renders only the visible lines (windowing). A `scrollOffset` signal drives which line range to materialize. Sub-line scrolling simulated via partial-line clipping at top/bottom edges.
-- [ ] **Folding/Unfolding Sections:** Animate the opening of folder details with a smooth "push down" effect as the layout engine recalculates subsequent item positions in real-time. A `foldProgress` signal (0.0 to 1.0) interpolates between collapsed (1 line) and expanded (N lines) heights.
-- [ ] **Progressive Detail Loading:** Transition from a single-line summary to a full dossier using height signals to animate container growth. Three tiers: name-only, name + confidence, full dossier with reasoning.
-- [ ] **Spring Physics for Signal Interpolation:** Wrap numeric signals in a `createSpring(signal, config)` utility that produces a smoothly interpolated output signal. Use for scroll position, fold progress, panel widths — anything that shouldn't jump instantly.
-- [ ] **Staggered List Animations:** When a list of proposals appears, reveal items with a per-item delay (e.g., 30ms stagger). Each item's `opacity` signal transitions from dim to full. The layout engine pre-calculates all positions so items don't shift as they appear.
-- [ ] **Crossfade Screen Transitions:** When switching between screens (home -> scanning -> review), crossfade by rendering both screens simultaneously, applying dim to the outgoing screen and brightening the incoming screen over ~200ms.
-- [ ] **Elastic Overscroll:** When scrolling past the top or bottom of a list, allow a brief "bounce" effect (2-3 lines of overscroll that spring back). Driven by a spring signal on scroll offset.
-- [ ] **Cursor Trail:** When moving through the review list, leave a brief dim highlight on the previous position that fades over 2-3 frames. Creates a sense of motion direction.
+- [x] **Folding/Unfolding Sections:** Animate the opening of folder details with a smooth "push down" effect as the layout engine recalculates subsequent item positions in real-time. A `foldProgress` signal (0.0 to 1.0) interpolates between collapsed (1 line) and expanded (N lines) heights.
+- [ ] **Progressive Detail Loading:** Transition from a single-line summary to a full dossier using height signals to animate container growth. Three tiers: name-only, name + confidence, full dossier with reasoning. (Uses `createFold` primitive.)
+- [x] **Spring Physics for Signal Interpolation:** Wrap numeric signals in a `createSpring(signal, config)` utility that produces a smoothly interpolated output signal. Use for scroll position, fold progress, panel widths — anything that shouldn't jump instantly.
+- [x] **Staggered List Animations:** When a list of proposals appears, reveal items with a per-item delay (e.g., 30ms stagger). Each item's `opacity` signal transitions from dim to full. The layout engine pre-calculates all positions so items don't shift as they appear.
+- [x] **Crossfade Screen Transitions:** When switching between screens (home -> scanning -> review), crossfade by rendering both screens simultaneously, applying dim to the outgoing screen and brightening the incoming screen over ~200ms.
+- [x] **Elastic Overscroll:** When scrolling past the top or bottom of a list, allow a brief "bounce" effect (2-3 lines of overscroll that spring back). Driven by a spring signal on scroll offset.
+- [x] **Cursor Trail:** When moving through the review list, leave a brief dim highlight on the previous position that fades over 2-3 frames. Creates a sense of motion direction.
 - [ ] **Resize Reflow Animation:** When the terminal is resized, don't snap to the new layout instantly. Animate the transition as lines reflow — text slides to new positions over ~150ms. Possible because cached segments make re-layout nearly free.
-- [ ] **"Breathing" Idle Animation:** When the TUI is idle (waiting for user input), subtly pulse the border or header brightness on a slow sinusoidal cycle. Signals life without being distracting.
+- [x] **"Breathing" Idle Animation:** When the TUI is idle (waiting for user input), subtly pulse the border or header brightness on a slow sinusoidal cycle. Signals life without being distracting.
 
 ---
 
