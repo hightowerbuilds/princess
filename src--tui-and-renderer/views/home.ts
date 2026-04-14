@@ -5,11 +5,14 @@ import { mapRange } from "../motion.ts";
 import type { TuiState } from "../state.ts";
 
 const LOGO = [
-  "  ____       _",
-  " |  _ \\ _ __(_)_ __   ___ ___  ___ ___",
-  " | |_) | '__| | '_ \\ / __/ _ \\/ __/ __|",
-  " |  __/| |  | | | | | (_|  __/\\__ \\__ \\",
-  " |_|   |_|  |_|_| |_|\\___\\___||___/___/",
+  "  ├───┐",
+  "  │   │",
+  "  │   │  ├──   ·   ├──┐   ├──   ├──   ├──   ├──",
+  "  │   │  │     │   │  │   │     │     │     │",
+  "  ├───┘  │     │   │  │   │     ├──   └──┐  └──┐",
+  "  │      │     │   │  │   │     │        │     │",
+  "  │      │     │   │  │   │     │        │     │",
+  "  │      └──   ┴   └──┘   └──   └──   ──┘   ──┘",
 ];
 
 export interface MenuItem {
@@ -29,7 +32,7 @@ export const MENU_ITEMS: MenuItem[] = [
 export function renderHome(state: TuiState, cols: number, rows: number): string[] {
   const lines: string[] = [];
   const cursor = state.homeCursor();
-  const ruleWidth = breakpoint(cols, { compact: cols - 4, standard: 52, wide: 52 });
+  const ruleWidth = breakpoint(cols, { compact: cols - 4, standard: 56, wide: 56 });
   const pulse = state.idlePulse.value();
 
   // Top padding

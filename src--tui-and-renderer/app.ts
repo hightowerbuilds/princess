@@ -121,52 +121,76 @@ function waitForHomeSelection(state: TuiState): Promise<string | null> {
 
 async function detectRepos(state: TuiState): Promise<void> {
   const cwd = process.cwd();
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  const seen = new Set<string>();
   const repos: string[] = [];
 
-  // Check CWD itself
-  if (await hasPackageJson(cwd)) {
-    repos.push(cwd);
+  async function addIfRepo(dir: string): Promise<void> {
+    if (seen.has(dir)) return;
+    seen.add(dir);
+    if (await hasPackageJson(dir)) {
+      repos.push(dir);
+    }
   }
+
+  async function scanChildren(parent: string): Promise<void> {
+    try {
+      const entries = await readdir(parent);
+      for (const entry of entries) {
+        if (entry.startsWith(".")) continue;
+        const fullPath = path.join(parent, entry);
+        const s = await stat(fullPath).catch(() => null);
+        if (!s?.isDirectory()) continue;
+        await addIfRepo(fullPath);
+      }
+    } catch {
+      // Can't read directory — skip
+    }
+  }
+
+  // Check CWD itself
+  await addIfRepo(cwd);
+
+  // Check CWD children
+  await scanChildren(cwd);
 
   // Check siblings (parent directory children)
-  const parentDir = path.dirname(cwd);
-  try {
-    const entries = await readdir(parentDir);
-    for (const entry of entries) {
-      if (entry.startsWith(".")) continue;
-      const fullPath = path.join(parentDir, entry);
-      if (fullPath === cwd && repos.includes(cwd)) continue; // already added
-      const s = await stat(fullPath).catch(() => null);
-      if (!s?.isDirectory()) continue;
-      if (await hasPackageJson(fullPath)) {
-        repos.push(fullPath);
-      }
-    }
-  } catch {
-    // Can't read parent — that's fine
-  }
+  await scanChildren(path.dirname(cwd));
 
-  // Also check children of CWD
+  // Check grandchildren of CWD (one more level deep)
   try {
     const entries = await readdir(cwd);
     for (const entry of entries) {
       if (entry.startsWith(".")) continue;
       const fullPath = path.join(cwd, entry);
-      if (repos.includes(fullPath)) continue;
       const s = await stat(fullPath).catch(() => null);
       if (!s?.isDirectory()) continue;
-      if (await hasPackageJson(fullPath)) {
-        repos.push(fullPath);
-      }
+      await scanChildren(fullPath);
     }
   } catch {
-    // Can't read cwd children — unusual but fine
+    // Skip
   }
 
-  // Sort: cwd first, then alphabetical
+  // Scan common project directories from home
+  if (home) {
+    const commonDirs = ["Desktop", "Documents", "Projects", "repos", "dev", "code", "src", "workspace", "sites", "websites"];
+    for (const dir of commonDirs) {
+      const fullPath = path.join(home, dir);
+      const s = await stat(fullPath).catch(() => null);
+      if (s?.isDirectory()) {
+        await scanChildren(fullPath);
+      }
+    }
+  }
+
+  // Sort: cwd first, then by proximity (shorter paths first), then alphabetical
   repos.sort((a, b) => {
     if (a === cwd) return -1;
     if (b === cwd) return 1;
+    // Prefer paths closer to cwd
+    const aCommon = commonPrefixLength(a, cwd);
+    const bCommon = commonPrefixLength(b, cwd);
+    if (aCommon !== bCommon) return bCommon - aCommon;
     return a.localeCompare(b);
   });
 
@@ -176,6 +200,12 @@ async function detectRepos(state: TuiState): Promise<void> {
     state.setRepoPickerInput("");
     state.setRepoPickerMode("list");
   });
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
 }
 
 async function hasPackageJson(dir: string): Promise<boolean> {

@@ -191,7 +191,7 @@ async function scanDirectory(
       localFrameworkHints.add("route-files");
     }
 
-    if (inspectedTextFiles >= 8 || !TEXT_EXTENSIONS.has(extension)) {
+    if (inspectedTextFiles >= 24 || !TEXT_EXTENSIONS.has(extension)) {
       continue;
     }
 
@@ -244,7 +244,7 @@ async function scanDirectory(
 
 async function inspectFile(filePath: string): Promise<FileInspection> {
   const contents = await readFile(filePath, "utf8").catch(() => "");
-  const sample = contents.slice(0, 4000);
+  const sample = contents.slice(0, 16000);
   const frameworkHints = new Set<string>();
   const testHints = new Set<string>();
   const extension = path.extname(filePath).toLowerCase();
@@ -397,16 +397,16 @@ function detectNamingStyle(dossiers: FolderDossier[]): string {
 }
 
 function pickRepresentativeFiles(localFiles: string[], childNodes: DirectoryNode[]): string[] {
-  const representatives = localFiles.slice(0, 5);
+  const representatives = localFiles.slice(0, 12);
 
-  if (representatives.length >= 5) {
+  if (representatives.length >= 12) {
     return representatives;
   }
 
   const inherited = childNodes.flatMap((node) => node.representativeFiles);
 
   for (const fileName of inherited) {
-    if (representatives.length >= 5) {
+    if (representatives.length >= 12) {
       break;
     }
 
@@ -428,7 +428,7 @@ function buildStaticSummary(
   const summaryParts: string[] = [];
   const topExtensions = Object.entries(extensionCounts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
+    .slice(0, 6)
     .map(([extension]) => extension);
 
   if (childDirectories.length > 0) {
@@ -436,7 +436,7 @@ function buildStaticSummary(
   }
 
   if (representativeFiles.length > 0) {
-    summaryParts.push(`representative files: ${representativeFiles.slice(0, 3).join(", ")}`);
+    summaryParts.push(`representative files: ${representativeFiles.slice(0, 6).join(", ")}`);
   }
 
   if (topExtensions.length > 0) {
@@ -444,7 +444,7 @@ function buildStaticSummary(
   }
 
   if (frameworkHints.length > 0) {
-    summaryParts.push(`framework hints: ${frameworkHints.slice(0, 3).join(", ")}`);
+    summaryParts.push(`framework hints: ${frameworkHints.join(", ")}`);
   }
 
   if (testHints.length > 0) {

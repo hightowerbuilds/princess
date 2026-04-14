@@ -112,7 +112,7 @@ export function createTuiState() {
   const reviewCursorTrail = createCursorTrail(reviewCursor, { fadeFrames: 4, maxTrail: 2 });
   const reviewStagger = createStaggeredReveal(totalProposals, { delay: 25, fadeDuration: 120 });
   const reviewBounce = createBounce({ duration: 250 });
-  const welcomeSegments = createMemo(() => stage() === "welcome" ? 8 : 0);
+  const welcomeSegments = createMemo(() => stage() === "welcome" ? 11 : 0);
   const welcomeTypewriter = createTypewriterReveal(welcomeSegments, { segmentDelay: 80 });
 
   return {

@@ -12,9 +12,9 @@ import { inferHeuristicRenameProposals } from "./infer";
 import { inferModelRenameProposals } from "./model";
 
 export const DEFAULT_THRESHOLDS: ModelThresholds = {
-  minConfidence: 0.78,
-  maxNameLength: 56,
-  maxSegments: 4,
+  minConfidence: 0.5,
+  maxNameLength: 72,
+  maxSegments: 6,
 };
 
 export const PIPELINE_STAGES = [

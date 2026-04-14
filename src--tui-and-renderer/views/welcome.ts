@@ -4,15 +4,18 @@ import { columns, breakpoint } from "../typeset-compose.ts";
 import type { TuiState } from "../state.ts";
 
 const LOGO = [
-  "  ____       _",
-  " |  _ \\ _ __(_)_ __   ___ ___  ___ ___",
-  " | |_) | '__| | '_ \\ / __/ _ \\/ __/ __|",
-  " |  __/| |  | | | | | (_|  __/\\__ \\__ \\",
-  " |_|   |_|  |_|_| |_|\\___\\___||___/___/",
+  "  ├───┐",
+  "  │   │",
+  "  │   │  ├──   ·   ├──┐   ├──   ├──   ├──   ├──",
+  "  │   │  │     │   │  │   │     │     │     │",
+  "  ├───┘  │     │   │  │   │     ├──   └──┐  └──┐",
+  "  │      │     │   │  │   │     │        │     │",
+  "  │      │     │   │  │   │     │        │     │",
+  "  │      └──   ┴   └──┘   └──   └──   ──┘   ──┘",
 ];
 
-// Total segments for typewriter: 5 logo + 1 subtitle + 1 rule + 3 config
-const WELCOME_SEGMENTS = 8;
+// Total segments for typewriter: 8 logo + 1 subtitle + 1 rule + 1 config block
+const WELCOME_SEGMENTS = 11;
 
 export function renderWelcome(state: TuiState, cols: number, rows: number): string[] {
   const lines: string[] = [];
@@ -27,7 +30,7 @@ export function renderWelcome(state: TuiState, cols: number, rows: number): stri
     lines.push(emptyLine());
   }
 
-  // Logo — segments 0-4
+  // Logo — segments 0-7
   for (let i = 0; i < LOGO.length; i++) {
     const opacity = tw.opacity(i);
     if (opacity <= 0) {
@@ -38,9 +41,9 @@ export function renderWelcome(state: TuiState, cols: number, rows: number): stri
     }
   }
 
-  // Subtitle — segment 5
+  // Subtitle — segment 8
   lines.push(emptyLine());
-  const subtitleOpacity = tw.opacity(5);
+  const subtitleOpacity = tw.opacity(8);
   if (subtitleOpacity <= 0) {
     lines.push(emptyLine());
   } else {
@@ -53,8 +56,8 @@ export function renderWelcome(state: TuiState, cols: number, rows: number): stri
   lines.push(emptyLine());
   const ruleWidth = breakpoint(cols, { compact: cols - 4, standard: 60, wide: 60 });
 
-  // Rule — segment 6
-  const ruleOpacity = tw.opacity(6);
+  // Rule — segment 9
+  const ruleOpacity = tw.opacity(9);
   if (ruleOpacity <= 0) {
     lines.push(emptyLine());
   } else {
@@ -63,8 +66,8 @@ export function renderWelcome(state: TuiState, cols: number, rows: number): stri
 
   lines.push(emptyLine());
 
-  // Config summary — segment 7
-  const configOpacity = tw.opacity(7);
+  // Config summary — segment 10
+  const configOpacity = tw.opacity(10);
   const configLines = [
     columns([{ content: bold("Source:"), minWidth: 12 }, { content: repoPath }], ruleWidth),
     columns([{ content: bold("Output:"), minWidth: 12 }, { content: outputPath }], ruleWidth),
