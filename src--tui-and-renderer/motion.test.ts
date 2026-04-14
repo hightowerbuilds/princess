@@ -18,6 +18,7 @@ import {
   createBounce,
   createGlowPulse,
   createMarquee,
+  createDebounce,
   clamp,
   lerp,
   mapRange,
@@ -501,6 +502,33 @@ scheduleTest("createMarquee", (done) => {
           dispose();
           done();
         }, 50);
+      }, 150);
+    }, 20);
+  });
+});
+
+// ── createDebounce ─────────────────────────────────────────────────────────
+
+scheduleTest("createDebounce", (done) => {
+  createRoot((dispose) => {
+    const [value, setValue] = createSignal(0);
+    const debounced = createDebounce(value, 100);
+
+    assertEq(debounced(), 0, "starts with source value");
+
+    setValue(1);
+    setValue(2);
+    setValue(3);
+
+    // Immediately after rapid changes, debounced should still be 0
+    setTimeout(() => {
+      assertEq(debounced(), 0, "not yet propagated during rapid changes");
+
+      // After delay, should have final value
+      setTimeout(() => {
+        assertEq(debounced(), 3, "propagates final value after delay");
+        dispose();
+        done();
       }, 150);
     }, 20);
   });

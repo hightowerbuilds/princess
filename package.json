@@ -24,7 +24,8 @@
     "test:visualize": "bun run src--tui-and-renderer/visualize.test.ts",
     "test:aesthetics": "bun run src--tui-and-renderer/aesthetics.test.ts",
     "test:compositor": "bun run src--tui-and-renderer/compositor.test.ts",
-    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics && bun run test:compositor"
+    "test:interaction": "bun run src--tui-and-renderer/interaction.test.ts",
+    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics && bun run test:compositor && bun run test:interaction"
   },
   "dependencies": {
     "solid-js": "^1.9.12"

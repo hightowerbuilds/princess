@@ -1106,6 +1106,45 @@ export function createMarquee(
   return { offset, isActive: active };
 }
 
+// ── Debounce ──────────────────────────────────────────────────────────────
+
+/**
+ * Debounce a signal — delays propagation until the source has been
+ * stable for `delayMs` milliseconds.
+ *
+ * Useful for hover preview: start a delayed expansion when the cursor
+ * settles on an item, cancel if the cursor moves before the delay.
+ *
+ * ```ts
+ * const [cursor, setCursor] = createSignal(0);
+ * const settled = createDebounce(cursor, 200);
+ *
+ * // settled() only updates 200ms after cursor stops changing
+ * ```
+ */
+export function createDebounce<T>(
+  source: Accessor<T>,
+  delayMs: number,
+): Accessor<T> {
+  const [value, setValue] = createSignal<T>(source());
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  createEffect(() => {
+    const current = source();
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      setValue(() => current as any);
+      timer = null;
+    }, delayMs);
+  });
+
+  onCleanup(() => {
+    if (timer) clearTimeout(timer);
+  });
+
+  return value as Accessor<T>;
+}
+
 // ── Utilities ────────────────────────────────────────────────────────────
 
 /**

@@ -114,14 +114,14 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 
 *Goal: Make the TUI feel responsive and tactile beyond basic key handling.*
 
-- [ ] **Fuzzy Search with Live Layout:** Add a `/` search mode that filters proposals in real-time. The layout engine reflows the visible list as items are filtered, with non-matching items collapsing out (animated via fold signals). Matched substrings highlighted inline.
-- [ ] **Keyboard Chord Sequences:** Support multi-key commands (e.g., `g g` to jump to top, `g e` to jump to end, like Vim). A `pendingChord` signal shows the partial chord in the status bar and times out after 500ms.
-- [ ] **Inline Editing of Names:** Allow the user to press `e` on a proposal to edit the suggested name directly in the list. The layout engine switches that row from display mode to an input field with cursor, selection, and ANSI-highlighted text.
-- [ ] **Bulk Selection Patterns:** Select ranges with Shift+arrow, regex-select with `:select /pattern/`, invert selection with `!`. Selection state is a per-item signal; the layout engine renders selected items with an inverted or highlighted background.
-- [ ] **Context Menus:** On a selected proposal, pressing `m` opens a small floating menu (Approve / Reject / Edit / Show Reasoning / Compare). Rendered as a composited overlay anchored to the cursor position.
-- [ ] **Undo/Redo Stack:** Each approval, rejection, or edit pushes to an undo stack. `u` undoes, `Ctrl+r` redoes. The layout engine handles item re-insertion with fold-in animation.
-- [ ] **Hover Preview on Cursor Move:** When the cursor moves to a new proposal, start a delayed (200ms) preview expansion that shows the first 3 lines of reasoning. If the cursor moves away before 200ms, cancel. Driven by a debounced signal.
-- [ ] **Jump-to-Index:** Press a number (1-9) or letter (a-z) to jump directly to that item in the visible list. Show the index labels in the left gutter when a jump-prefix key is held.
+- [x] **Fuzzy Search with Live Layout:** Add a `/` search mode that filters proposals in real-time. The layout engine reflows the visible list as items are filtered, with non-matching items collapsing out (animated via fold signals). Matched substrings highlighted inline.
+- [x] **Keyboard Chord Sequences:** Support multi-key commands (e.g., `g g` to jump to top, `g e` to jump to end, like Vim). A `pendingChord` signal shows the partial chord in the status bar and times out after 500ms.
+- [x] **Inline Editing of Names:** Allow the user to press `e` on a proposal to edit the suggested name directly in the list. The layout engine switches that row from display mode to an input field with cursor, selection, and ANSI-highlighted text.
+- [x] **Bulk Selection Patterns:** Select ranges with Shift+arrow, regex-select with `:select /pattern/`, invert selection with `!`. Selection state is a per-item signal; the layout engine renders selected items with an inverted or highlighted background.
+- [x] **Context Menus:** On a selected proposal, pressing `m` opens a small floating menu (Approve / Reject / Edit / Show Reasoning / Compare). Rendered as a composited overlay anchored to the cursor position.
+- [x] **Undo/Redo Stack:** Each approval, rejection, or edit pushes to an undo stack. `u` undoes, `Ctrl+r` redoes. The layout engine handles item re-insertion with fold-in animation.
+- [x] **Hover Preview on Cursor Move:** When the cursor moves to a new proposal, start a delayed (200ms) preview expansion that shows the first 3 lines of reasoning. If the cursor moves away before 200ms, cancel. Driven by a debounced signal. *(Uses `createDebounce()` primitive in motion.ts.)*
+- [x] **Jump-to-Index:** Press a number (1-9) or letter (a-z) to jump directly to that item in the visible list. Show the index labels in the left gutter when a jump-prefix key is held.
 
 ---
 
