@@ -309,9 +309,6 @@ function handleRepoInputKey(
 async function runOptimizeFlow(state: TuiState): Promise<void> {
   // Welcome: wait for Enter
   state.setStage("welcome");
-  state.welcomeTypewriter.reset();
-  // Trigger the typewriter by briefly setting count to 0 then back
-  // (the state initializes with count=8; reset clears the animation)
   const welcomeAction = await waitForKey(
     (key) => key.name === "enter" || key.name === "q" || key.name === "escape",
   );
