@@ -99,14 +99,14 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 
 *Goal: Move beyond single-stream rendering to composited, multi-region layouts.*
 
-- [ ] **Z-Layer Compositing:** Render the TUI as a stack of layers (background, content, overlay, modal). Each layer is a separate layout pass. Compose them top-down, with upper layers overwriting lower layers cell-by-cell. Transparent cells (null) pass through.
-- [ ] **Floating Detail Panels:** On review screen, pressing a key on a proposal opens a floating panel beside or over the list showing the full dossier, reasoning, and file samples. The panel is a separate layout region with its own scroll state, positioned relative to the cursor.
-- [ ] **Modal Dialogs with Backdrop:** Confirmation prompts ("Apply 12 renames?") render as centered modal boxes with a dimmed backdrop. The backdrop is the previous screen rendered through a dim filter. Modal captures all input until dismissed.
-- [ ] **Split-Pane Layouts:** On wide terminals (> 120 cols), show the proposal list on the left and the detail panel on the right simultaneously. A `splitRatio` signal controls the divider position. The layout engine gives each pane its own width for independent text wrapping.
-- [ ] **Picture-in-Picture Progress:** During the apply phase, show a small inset panel in the corner with the overall progress summary while the main area shows per-file detail. The inset is a separate layout region composited onto the main frame.
-- [ ] **Tabbed Content Regions:** Within the detail panel, support tabs (Dossier | Files | Reasoning | Diff) that switch the panel content without affecting the outer layout. Each tab is a pre-laid-out block; switching is a signal change with crossfade.
-- [ ] **Resizable Panels:** Allow the user to resize split panes with keyboard shortcuts (e.g., `[` and `]`). The `splitRatio` signal animates via spring interpolation to the new value. Both panes reflow simultaneously using cached segments.
-- [ ] **Toast Notifications:** Non-blocking notifications ("Scan complete", "3 low-confidence proposals") that slide in from the top-right, persist for 3 seconds, then fade out. Each toast is a composited overlay with its own lifecycle signals.
+- [x] **Z-Layer Compositing:** Render the TUI as a stack of layers (background, content, overlay, modal). Each layer is a separate layout pass. Compose them top-down, with upper layers overwriting lower layers cell-by-cell. Transparent cells (null) pass through.
+- [x] **Floating Detail Panels:** On review screen, pressing a key on a proposal opens a floating panel beside or over the list showing the full dossier, reasoning, and file samples. The panel is a separate layout region with its own scroll state, positioned relative to the cursor.
+- [x] **Modal Dialogs with Backdrop:** Confirmation prompts ("Apply 12 renames?") render as centered modal boxes with a dimmed backdrop. The backdrop is the previous screen rendered through a dim filter. Modal captures all input until dismissed.
+- [x] **Split-Pane Layouts:** On wide terminals (> 120 cols), show the proposal list on the left and the detail panel on the right simultaneously. A `splitRatio` signal controls the divider position. The layout engine gives each pane its own width for independent text wrapping.
+- [x] **Picture-in-Picture Progress:** During the apply phase, show a small inset panel in the corner with the overall progress summary while the main area shows per-file detail. The inset is a separate layout region composited onto the main frame.
+- [x] **Tabbed Content Regions:** Within the detail panel, support tabs (Dossier | Files | Reasoning | Diff) that switch the panel content without affecting the outer layout. Each tab is a pre-laid-out block; switching is a signal change with crossfade.
+- [x] **Resizable Panels:** Allow the user to resize split panes with keyboard shortcuts (e.g., `[` and `]`). The `splitRatio` signal animates via spring interpolation to the new value. Both panes reflow simultaneously using cached segments. *(Uses `splitPane()` with spring-animated ratio via existing `createSpring()`.)*
+- [x] **Toast Notifications:** Non-blocking notifications ("Scan complete", "3 low-confidence proposals") that slide in from the top-right, persist for 3 seconds, then fade out. Each toast is a composited overlay with its own lifecycle signals.
 
 ---
 

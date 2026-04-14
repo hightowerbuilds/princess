@@ -23,7 +23,8 @@
     "test:motion": "bun --conditions=browser run src--tui-and-renderer/motion.test.ts",
     "test:visualize": "bun run src--tui-and-renderer/visualize.test.ts",
     "test:aesthetics": "bun run src--tui-and-renderer/aesthetics.test.ts",
-    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics"
+    "test:compositor": "bun run src--tui-and-renderer/compositor.test.ts",
+    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics && bun run test:compositor"
   },
   "dependencies": {
     "solid-js": "^1.9.12"
