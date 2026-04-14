@@ -26,6 +26,10 @@ import {
   hangingIndent,
   breakpoint,
   breakpointName,
+  findHyphenationPoints,
+  hyphenateWord,
+  optimalBreaks,
+  layoutOptimal,
 } from "./typeset-compose.ts";
 
 let passed = 0;
@@ -653,6 +657,91 @@ section("breakpoint");
     wide: "large",
   });
   assertEq(value, "medium", "breakpoint selects correct value");
+}
+
+// ── Soft Hyphenation ─────────────────────────────────────────────────────
+
+section("findHyphenationPoints");
+
+{
+  const points = findHyphenationPoints("components");
+  assert(points.length > 0, "components has hyphenation points");
+  assert(points.every(p => p >= 2 && p <= 8), "all points within valid range");
+}
+
+{
+  assertEq(findHyphenationPoints("hi"), [], "short word has no points");
+  assertEq(findHyphenationPoints("the"), [], "3-letter word has no points");
+  assertEq(findHyphenationPoints("a"), [], "single char has no points");
+}
+
+{
+  const points = findHyphenationPoints("application");
+  assert(points.length > 0, "application has hyphenation points");
+}
+
+section("hyphenateWord");
+
+{
+  const parts = hyphenateWord("components", 6);
+  assertEq(parts.length, 2, "word is split into two parts");
+  assert(parts[0].endsWith("-"), "first part ends with hyphen");
+  assert(stringWidth(parts[0]) <= 6, `first part fits: ${stringWidth(parts[0])} <= 6`);
+  // First part minus hyphen + second part = original word
+  const firstWithoutHyphen = parts[0].slice(0, -1);
+  assertEq(firstWithoutHyphen + parts[1], "components", "parts reconstruct to original word");
+}
+
+{
+  const parts = hyphenateWord("hi", 10);
+  assertEq(parts, ["hi"], "short word not hyphenated");
+}
+
+{
+  const parts = hyphenateWord("components", 20);
+  assertEq(parts, ["components"], "word fits, no hyphenation");
+}
+
+// ── Knuth-Plass Optimal Breaks ──────────────────────────────────────────
+
+section("optimalBreaks / layoutOptimal");
+
+{
+  const p = prepare("The quick brown fox jumps over the lazy dog");
+  const breaks = optimalBreaks(p, 20);
+  assert(breaks.length > 0, "has break points for narrow width");
+}
+
+{
+  const p = prepare("Short");
+  const breaks = optimalBreaks(p, 20);
+  assertEq(breaks.length, 0, "single word needs no breaks");
+}
+
+{
+  const p = prepare("The quick brown fox jumps over the lazy dog");
+  const optimal = layoutOptimal(p, 15);
+  const greedy = materializeToStrings(p, layout(p, 15));
+
+  assertEq(optimal.length, greedy.length, "same number of lines (approximately)");
+
+  // Optimal should have more balanced line widths
+  const optWidths = optimal.map(l => stringWidth(l));
+  const greedyWidths = greedy.map(l => stringWidth(l));
+
+  const optVariance = variance(optWidths);
+  const greedyVariance = variance(greedyWidths);
+
+  // Optimal should have equal or lower variance (more balanced)
+  assert(optVariance <= greedyVariance + 10, `optimal variance (${optVariance.toFixed(1)}) <= greedy (${greedyVariance.toFixed(1)}) + tolerance`);
+}
+
+function variance(values: number[]): number {
+  if (values.length <= 1) return 0;
+  // Exclude last line (always short in both algorithms)
+  const v = values.slice(0, -1);
+  const mean = v.reduce((a, b) => a + b, 0) / v.length;
+  return v.reduce((sum, x) => sum + (x - mean) ** 2, 0) / v.length;
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

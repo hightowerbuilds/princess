@@ -19,6 +19,9 @@ import {
   createGlowPulse,
   createMarquee,
   createDebounce,
+  createSmoothScroll,
+  createDetailTiers,
+  createResizeReflow,
   clamp,
   lerp,
   mapRange,
@@ -531,6 +534,90 @@ scheduleTest("createDebounce", (done) => {
         done();
       }, 150);
     }, 20);
+  });
+});
+
+// ── createSmoothScroll ─────────────────────────────────────────────────────
+
+scheduleTest("createSmoothScroll", (done) => {
+  createRoot((dispose) => {
+    const [target, setTarget] = createSignal(0);
+    const scroll = createSmoothScroll(target);
+
+    assertEq(scroll.offset(), 0, "starts at 0");
+    assertEq(scroll.integerPart(), 0, "integer part is 0");
+    assertEq(scroll.fractional(), 0, "fractional is 0");
+
+    setTarget(10);
+
+    setTimeout(() => {
+      const off = scroll.offset();
+      assert(off > 0 && off < 10, `mid-scroll offset: ${off.toFixed(1)}`);
+
+      const intPart = scroll.integerPart();
+      const fracPart = scroll.fractional();
+      assert(intPart >= 0, `integer part: ${intPart}`);
+      assert(fracPart >= 0 && fracPart < 1, `fractional: ${fracPart.toFixed(2)}`);
+
+      setTimeout(() => {
+        assert(Math.abs(scroll.offset() - 10) < 1, "converges to target");
+        dispose();
+        done();
+      }, 500);
+    }, 100);
+  });
+});
+
+// ── createDetailTiers ─────────────────────────────────────────────────────
+
+scheduleTest("createDetailTiers", (done) => {
+  createRoot((dispose) => {
+    const detail = createDetailTiers({ duration: 100 });
+
+    assertEq(detail.tier(), 0, "starts at tier 0");
+    const initial = detail.visibleLines([1, 3, 12]);
+    assertEq(initial, 1, "tier 0 = 1 line");
+
+    detail.setTier(2);
+    assertEq(detail.tier(), 2, "tier set to 2");
+
+    setTimeout(() => {
+      assert(detail.isAnimating(), "animating during transition");
+      const mid = detail.visibleLines([1, 3, 12]);
+      assert(mid > 1 && mid < 12, `mid-transition lines: ${mid}`);
+
+      setTimeout(() => {
+        const final = detail.visibleLines([1, 3, 12]);
+        assertEq(final, 12, "tier 2 = 12 lines after animation");
+        assert(!detail.isAnimating(), "not animating after completion");
+        dispose();
+        done();
+      }, 200);
+    }, 50);
+  });
+});
+
+// ── createResizeReflow ────────────────────────────────────────────────────
+
+scheduleTest("createResizeReflow", (done) => {
+  createRoot((dispose) => {
+    const [cols, setCols] = createSignal(80);
+    const reflow = createResizeReflow(cols);
+
+    assertEq(reflow(), 80, "starts at source value");
+
+    setCols(120);
+
+    setTimeout(() => {
+      const mid = reflow();
+      assert(mid > 80 && mid < 120, `mid-reflow width: ${mid.toFixed(1)}`);
+
+      setTimeout(() => {
+        assert(Math.abs(reflow() - 120) < 1, "converges to new width");
+        dispose();
+        done();
+      }, 500);
+    }, 50);
   });
 });
 

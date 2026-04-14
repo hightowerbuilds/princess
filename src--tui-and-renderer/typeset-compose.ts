@@ -392,3 +392,253 @@ export function breakpointName(cols: number): BreakpointName {
   if (cols < 120) return "standard";
   return "wide";
 }
+
+// ── Soft Hyphenation ────────────────────────────────────────────────────
+
+const VOWELS = new Set("aeiouyAEIOUY".split(""));
+
+/**
+ * Find valid hyphenation points in a word.
+ *
+ * Uses simple English syllable rules:
+ *   - Break between consonant clusters (VC-CV pattern)
+ *   - Never break words shorter than 5 characters
+ *   - Never leave fewer than 2 characters on either side
+ *
+ * Returns character indices where a hyphen can be inserted *after*.
+ *
+ * ```ts
+ * findHyphenationPoints("components")  // [3, 6] → "com-po-nents"
+ * findHyphenationPoints("hi")          // [] — too short
+ * ```
+ */
+export function findHyphenationPoints(word: string): number[] {
+  if (word.length < 5) return [];
+
+  const points: number[] = [];
+  const lower = word.toLowerCase();
+
+  for (let i = 2; i < word.length - 2; i++) {
+    const prev = lower[i - 1];
+    const curr = lower[i];
+
+    // VC-CV: vowel followed by consonant, then consonant followed by vowel
+    if (
+      VOWELS.has(prev) &&
+      !VOWELS.has(curr) &&
+      i + 1 < word.length &&
+      !VOWELS.has(lower[i]) &&
+      (i + 1 >= word.length || VOWELS.has(lower[i + 1]))
+    ) {
+      points.push(i);
+    }
+
+    // V-CV: break before a consonant-vowel pair after a vowel
+    if (
+      VOWELS.has(prev) &&
+      !VOWELS.has(curr) &&
+      i + 1 < word.length &&
+      VOWELS.has(lower[i + 1]) &&
+      !points.includes(i)
+    ) {
+      points.push(i);
+    }
+  }
+
+  // Deduplicate and sort
+  return [...new Set(points)].sort((a, b) => a - b);
+}
+
+/**
+ * Hyphenate a word at a specific maximum width.
+ *
+ * If the word fits within `maxWidth`, returns it unchanged.
+ * Otherwise, breaks at the best hyphenation point that fits,
+ * appending a visible hyphen to the first part.
+ *
+ * Returns `[firstPart + "-", remainder]` or `[word]` if no break needed.
+ *
+ * ```ts
+ * hyphenateWord("components", 6)  // ["com-", "ponents"]
+ * hyphenateWord("hi", 10)         // ["hi"]
+ * ```
+ */
+export function hyphenateWord(
+  word: string,
+  maxWidth: number,
+): string[] {
+  if (stringWidth(word) <= maxWidth) return [word];
+
+  const points = findHyphenationPoints(word);
+  if (points.length === 0) return [word]; // Can't hyphenate
+
+  // Find the best break point that fits (with hyphen)
+  for (let i = points.length - 1; i >= 0; i--) {
+    const breakAt = points[i];
+    const firstPart = word.slice(0, breakAt);
+    if (stringWidth(firstPart) + 1 <= maxWidth) { // +1 for hyphen
+      return [firstPart + "-", word.slice(breakAt)];
+    }
+  }
+
+  return [word]; // No break point fits
+}
+
+// ── Ragged-Right Optimization (Knuth-Plass) ─────────────────────────────
+
+/**
+ * Find optimal line breaks that minimize total raggedness.
+ *
+ * Implements a simplified Knuth-Plass algorithm using dynamic
+ * programming. Each line's "badness" is the cube of its shortfall
+ * from the target width. The algorithm finds the set of breakpoints
+ * that minimizes total badness across all lines.
+ *
+ * Returns segment indices where lines should break.
+ *
+ * ```ts
+ * const prepared = prepare("The quick brown fox jumps over the lazy dog");
+ * const breaks = optimalBreaks(prepared, 20);
+ * // Breaks chosen to minimize ragged-right variance
+ * ```
+ */
+export function optimalBreaks(prepared: PreparedText, maxWidth: number): number[] {
+  const { segments } = prepared;
+
+  // Collect word-break candidates (indices after spaces)
+  const candidates: number[] = [0]; // Start of text
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].kind === "space") {
+      candidates.push(i + 1);
+    } else if (segments[i].kind === "newline") {
+      candidates.push(i + 1);
+    }
+  }
+  candidates.push(segments.length); // End of text
+
+  const n = candidates.length;
+  if (n <= 2) return []; // Nothing to optimize
+
+  // DP arrays
+  const cost = new Float64Array(n).fill(Infinity);
+  const parent = new Int32Array(n).fill(-1);
+  cost[0] = 0;
+
+  for (let i = 0; i < n - 1; i++) {
+    if (cost[i] === Infinity) continue;
+
+    let lineWidth = 0;
+    for (let j = i + 1; j < n; j++) {
+      // Measure width of segments from candidates[i] to candidates[j]
+      const segStart = candidates[i];
+      const segEnd = candidates[j];
+
+      lineWidth = measureSegmentSpan(segments, segStart, segEnd);
+
+      if (lineWidth > maxWidth && j > i + 1) break; // Exceeded width
+
+      // Compute badness: how far short of maxWidth
+      const shortfall = maxWidth - lineWidth;
+      const isLastLine = j === n - 1;
+
+      // Last line penalty is much lower (left-aligned is fine)
+      const badness = isLastLine
+        ? Math.min(shortfall * shortfall, 100)
+        : shortfall * shortfall * shortfall;
+
+      const totalCost = cost[i] + badness;
+      if (totalCost < cost[j]) {
+        cost[j] = totalCost;
+        parent[j] = i;
+      }
+    }
+  }
+
+  // Trace back to find optimal breakpoints
+  const breaks: number[] = [];
+  let idx = n - 1;
+  while (idx > 0) {
+    const prev = parent[idx];
+    if (prev > 0) {
+      breaks.push(candidates[prev]);
+    }
+    idx = prev;
+  }
+
+  return breaks.reverse();
+}
+
+/** Measure the visible width of segments in range [start, end), trimming trailing spaces. */
+function measureSegmentSpan(segments: readonly Segment[], start: number, end: number): number {
+  let width = 0;
+  let lastNonSpaceWidth = 0;
+
+  for (let i = start; i < end; i++) {
+    const seg = segments[i];
+    if (seg.kind === "ansi" || seg.kind === "newline") continue;
+    width += seg.width;
+    if (seg.kind !== "space") {
+      lastNonSpaceWidth = width;
+    }
+  }
+
+  return lastNonSpaceWidth;
+}
+
+/**
+ * Layout text using Knuth-Plass optimal line breaking.
+ *
+ * Produces more visually balanced line lengths than the greedy
+ * algorithm used by `layout()`. Especially noticeable in narrow
+ * columns where greedy breaking creates one very short last line.
+ *
+ * ```ts
+ * const p = prepare("The quick brown fox jumps over the lazy dog");
+ * const lines = layoutOptimal(p, 15);
+ * // Lines have more balanced widths than greedy layout
+ * ```
+ */
+export function layoutOptimal(prepared: PreparedText, maxWidth: number): string[] {
+  const breaks = optimalBreaks(prepared, maxWidth);
+
+  if (breaks.length === 0) {
+    return materializeToStrings(prepared, layout(prepared, maxWidth));
+  }
+
+  const { segments } = prepared;
+  const lines: string[] = [];
+  let start = 0;
+
+  for (const breakIdx of breaks) {
+    lines.push(materializeSpan(segments, start, breakIdx));
+    start = breakIdx;
+  }
+
+  // Last line
+  if (start < segments.length) {
+    lines.push(materializeSpan(segments, start, segments.length));
+  }
+
+  return lines;
+}
+
+/** Build a string from a span of segments, trimming leading/trailing spaces. */
+function materializeSpan(segments: readonly Segment[], start: number, end: number): string {
+  let result = "";
+  let first = start;
+  let last = end;
+
+  // Skip leading spaces
+  while (first < last && segments[first].kind === "space") first++;
+  // Skip trailing spaces
+  while (last > first && segments[last - 1].kind === "space") last--;
+
+  for (let i = first; i < last; i++) {
+    result += segments[i].text;
+  }
+
+  return result;
+}
+
+// Re-export Segment type for measureSegmentSpan
+import type { Segment } from "./typeset.ts";

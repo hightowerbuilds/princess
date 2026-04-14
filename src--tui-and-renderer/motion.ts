@@ -1145,6 +1145,165 @@ export function createDebounce<T>(
   return value as Accessor<T>;
 }
 
+// ── Smooth Scroll ─────────────────────────────────────────────────────────
+
+export interface SmoothScrollConfig {
+  /** Spring config for scroll interpolation. Default: snappy. */
+  spring?: SpringConfig;
+}
+
+/**
+ * Spring-animated scroll offset with sub-line fractional component.
+ *
+ * Wraps a discrete scroll target (integer line offset) with spring
+ * physics. The output has an integer part (which line to start at)
+ * and a fractional part (0–1, for sub-line visual clipping at edges).
+ *
+ * ```ts
+ * const [target, setTarget] = createSignal(0);
+ * const scroll = createSmoothScroll(target);
+ *
+ * // In rendering:
+ * const startLine = Math.floor(scroll.offset());
+ * const clipFraction = scroll.fractional(); // 0–1 for top-edge dimming
+ * ```
+ */
+export function createSmoothScroll(
+  target: Accessor<number>,
+  config?: SmoothScrollConfig,
+): {
+  offset: Accessor<number>;
+  fractional: Accessor<number>;
+  integerPart: Accessor<number>;
+} {
+  const springConfig = config?.spring ?? SPRING_PRESETS.snappy;
+  const smoothed = createSpring(target, springConfig);
+
+  return {
+    offset: smoothed,
+    integerPart: () => Math.floor(smoothed()),
+    fractional: () => {
+      const v = smoothed();
+      return v - Math.floor(v);
+    },
+  };
+}
+
+// ── Progressive Detail ────────────────────────────────────────────────────
+
+export interface DetailTierConfig {
+  /** Animation duration per tier transition in ms. Default: 200. */
+  duration?: number;
+  /** Easing function. Default: easeOutCubic. */
+  easing?: (t: number) => number;
+}
+
+/**
+ * Manage progressive detail tiers with animated height transitions.
+ *
+ * Three tiers of detail (0=collapsed, 1=summary, 2=full), each
+ * with an animated fold transition. Use `visibleLines()` to get
+ * the number of lines to render for each tier's content height.
+ *
+ * ```ts
+ * const detail = createDetailTiers();
+ *
+ * detail.setTier(1); // Expand to summary
+ * detail.setTier(2); // Expand to full detail
+ *
+ * // In rendering:
+ * const lines = detail.visibleLines([1, 3, 12]); // heights per tier
+ * ```
+ */
+export function createDetailTiers(config?: DetailTierConfig): {
+  tier: Accessor<number>;
+  progress: Accessor<number>;
+  setTier: (tier: number) => void;
+  visibleLines: (tierHeights: number[]) => number;
+  isAnimating: Accessor<boolean>;
+} {
+  const duration = config?.duration ?? 200;
+  const easing = config?.easing ?? EASING.easeOutCubic;
+
+  const [tier, setTierSignal] = createSignal(0);
+  const [progress, setProgress] = createSignal(0);
+  const [animating, setAnimating] = createSignal(false);
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let startTime = 0;
+  let fromHeight = 0;
+  let toHeight = 0;
+  let currentHeight = 0;
+  let tierHeightsCache: number[] = [1, 3, 12];
+
+  function startAnimation() {
+    if (timer !== null) clearInterval(timer);
+    startTime = Date.now();
+    setAnimating(true);
+    timer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const easedT = easing(t);
+      currentHeight = fromHeight + (toHeight - fromHeight) * easedT;
+      setProgress(currentHeight);
+      if (t >= 1) {
+        currentHeight = toHeight;
+        setProgress(toHeight);
+        setAnimating(false);
+        if (timer) { clearInterval(timer); timer = null; }
+      }
+    }, 16);
+  }
+
+  function setTier(newTier: number) {
+    const clamped = Math.max(0, Math.min(newTier, tierHeightsCache.length - 1));
+    fromHeight = currentHeight;
+    toHeight = tierHeightsCache[clamped] ?? 1;
+    setTierSignal(clamped);
+    startAnimation();
+  }
+
+  onCleanup(() => { if (timer) { clearInterval(timer); timer = null; } });
+
+  return {
+    tier,
+    progress,
+    setTier,
+    visibleLines: (tierHeights: number[]): number => {
+      tierHeightsCache = tierHeights;
+      if (!animating()) {
+        const t = tier();
+        return tierHeights[t] ?? 1;
+      }
+      return Math.round(progress());
+    },
+    isAnimating: animating,
+  };
+}
+
+// ── Resize Reflow ─────────────────────────────────────────────────────────
+
+/**
+ * Spring-animated terminal width for smooth reflow on resize.
+ *
+ * Wraps the terminal columns signal with spring interpolation so
+ * text reflows gradually instead of snapping to the new width.
+ * The layout engine re-wraps at `Math.round(reflowWidth())` each frame.
+ *
+ * ```ts
+ * const reflowWidth = createResizeReflow(() => state.columns());
+ *
+ * // In rendering:
+ * const effectiveWidth = Math.round(reflowWidth());
+ * const lines = materializeToStrings(prepared, layout(prepared, effectiveWidth));
+ * ```
+ */
+export function createResizeReflow(
+  source: Accessor<number>,
+  config?: SpringConfig,
+): Accessor<number> {
+  return createSpring(source, config ?? { stiffness: 300, damping: 30, precision: 0.5 });
+}
+
 // ── Utilities ────────────────────────────────────────────────────────────
 
 /**

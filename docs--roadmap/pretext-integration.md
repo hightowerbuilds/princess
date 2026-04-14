@@ -34,8 +34,8 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 - [x] **Box Model Blocks:** Give each text block a box model: padding (inner spacing), margin (outer spacing), and optional border (box-drawing characters). The layout engine subtracts chrome from available width before wrapping content. Nested boxes subtract recursively.
 - [x] **Variable-Width Line Iteration:** Port Pretext's `layoutNextLineRange()` concept — each line can have a different available width. This enables text flowing around inset panels, sidebars, or decorative elements where the content area isn't a simple rectangle.
 - [x] **Balanced Text (Shrink-Wrap):** For short text blocks (titles, labels), binary-search for the narrowest width that doesn't increase line count. This avoids the "one orphan word on the last line" problem. Use `walkLineRanges`-style speculative measurement without string allocation.
-- [ ] **Soft Hyphenation:** Insert soft hyphens (`\u00AD`) at syllable boundaries in long words. The layout engine breaks at these points only when necessary, displaying a visible hyphen at the break.
-- [ ] **Ragged-Right Optimization:** For non-justified text, score line-break options by how "ragged" the right edge is (Knuth-Plass style penalty). Pick breaks that minimize variance in line lengths for a calmer visual texture.
+- [x] **Soft Hyphenation:** Insert soft hyphens (`\u00AD`) at syllable boundaries in long words. The layout engine breaks at these points only when necessary, displaying a visible hyphen at the break.
+- [x] **Ragged-Right Optimization:** For non-justified text, score line-break options by how "ragged" the right edge is (Knuth-Plass style penalty). Pick breaks that minimize variance in line lengths for a calmer visual texture.
 
 ---
 
@@ -44,15 +44,15 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 *Goal: Use Solid.js signals to drive frame-by-frame updates of layout-calculated positions.*
 
 - [x] **"The Typewriter Sweep":** Animate text reveals word-by-word or line-by-line using segment indices and Solid.js timers. A `revealCursor` signal advances through prepared segments; the renderer materializes only segments up to the cursor. ANSI codes for unrevealed text render as dim placeholders.
-- [ ] **Smooth Vertical Scrolling:** Implement a "Virtual Viewport" that uses layout to calculate total scrollable height and renders only the visible lines (windowing). A `scrollOffset` signal drives which line range to materialize. Sub-line scrolling simulated via partial-line clipping at top/bottom edges.
+- [x] **Smooth Vertical Scrolling:** Implement a "Virtual Viewport" that uses layout to calculate total scrollable height and renders only the visible lines (windowing). A `scrollOffset` signal drives which line range to materialize. Sub-line scrolling simulated via partial-line clipping at top/bottom edges.
 - [x] **Folding/Unfolding Sections:** Animate the opening of folder details with a smooth "push down" effect as the layout engine recalculates subsequent item positions in real-time. A `foldProgress` signal (0.0 to 1.0) interpolates between collapsed (1 line) and expanded (N lines) heights.
-- [ ] **Progressive Detail Loading:** Transition from a single-line summary to a full dossier using height signals to animate container growth. Three tiers: name-only, name + confidence, full dossier with reasoning. (Uses `createFold` primitive.)
+- [x] **Progressive Detail Loading:** Transition from a single-line summary to a full dossier using height signals to animate container growth. Three tiers: name-only, name + confidence, full dossier with reasoning. (Uses `createDetailTiers` primitive.)
 - [x] **Spring Physics for Signal Interpolation:** Wrap numeric signals in a `createSpring(signal, config)` utility that produces a smoothly interpolated output signal. Use for scroll position, fold progress, panel widths — anything that shouldn't jump instantly.
 - [x] **Staggered List Animations:** When a list of proposals appears, reveal items with a per-item delay (e.g., 30ms stagger). Each item's `opacity` signal transitions from dim to full. The layout engine pre-calculates all positions so items don't shift as they appear.
 - [x] **Crossfade Screen Transitions:** When switching between screens (home -> scanning -> review), crossfade by rendering both screens simultaneously, applying dim to the outgoing screen and brightening the incoming screen over ~200ms.
 - [x] **Elastic Overscroll:** When scrolling past the top or bottom of a list, allow a brief "bounce" effect (2-3 lines of overscroll that spring back). Driven by a spring signal on scroll offset.
 - [x] **Cursor Trail:** When moving through the review list, leave a brief dim highlight on the previous position that fades over 2-3 frames. Creates a sense of motion direction.
-- [ ] **Resize Reflow Animation:** When the terminal is resized, don't snap to the new layout instantly. Animate the transition as lines reflow — text slides to new positions over ~150ms. Possible because cached segments make re-layout nearly free.
+- [x] **Resize Reflow Animation:** When the terminal is resized, don't snap to the new layout instantly. Animate the transition as lines reflow — text slides to new positions over ~150ms. Possible because cached segments make re-layout nearly free.
 - [x] **"Breathing" Idle Animation:** When the TUI is idle (waiting for user input), subtly pulse the border or header brightness on a slow sinusoidal cycle. Signals life without being distracting.
 
 ---
