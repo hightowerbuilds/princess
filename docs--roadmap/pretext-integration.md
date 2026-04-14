@@ -61,18 +61,18 @@ This roadmap outlines the strategy for transforming the Princess TUI into a high
 
 *Goal: Turn raw data into visual patterns directly within the text flow.*
 
-- [ ] **Sparkline Integration:** Embed tiny, layout-aligned bar charts inside text blocks (e.g., `[████░░░] 70% TS`). The layout engine treats the sparkline as an atomic inline segment with a fixed column width.
-- [ ] **Breadcrumb Shrinking:** Progressively collapse parent folders in long paths (e.g., `s/c/s/u/b/Button.tsx`) using layout to determine the exact fit for the current width. Collapse deepest segments first to preserve the most context.
-- [ ] **Diff-Highlighting:** Animate "pulses" or highlights on specific character offsets when showing renames (e.g., highlighting only the `--pure-ts` suffix). Compute the minimal edit distance between old and new names; highlight only the changed segments.
-- [ ] **In-Line Search Highlighting:** Use layout cursors to find exact line and character offsets for search matches within wrapped text, allowing the UI to underline or invert matches even when they span a line break.
-- [ ] **Braille-Resolution Charts:** Use Unicode Braille characters (2x4 dot grid per cell) for high-resolution inline visualizations. A single terminal row can show 4 vertical data points. Render file-type distribution, confidence histograms, or directory depth profiles at 2x the vertical resolution of block characters.
-- [ ] **Tree Connection Lines:** Draw proper box-drawing connectors (`├──`, `└──`, `│`) for directory tree views. The layout engine tracks depth and sibling position so connectors align perfectly even when content wraps to multiple lines. Last-child detection switches `├` to `└`.
-- [ ] **Confidence Heat Gradient:** Map confidence scores (0.0-1.0) to a color gradient using 256-color or truecolor ANSI. Low confidence = warm (red/yellow), high confidence = cool (green/cyan). Apply to backgrounds, text, or inline indicator blocks.
-- [ ] **File-Type Distribution Bars:** For each directory dossier, show a proportional horizontal bar of file types using colored block characters: `████████░░░░` where each color represents .ts, .js, .json, etc. Layout engine ensures the bar fits available width.
-- [ ] **Unicode Block-Element Heatmaps:** Use block elements (`▁▂▃▄▅▆▇█`) to render compact heatmaps of directory activity, file sizes, or nesting depth. Each character encodes a value in 8 levels within a single cell.
-- [ ] **Inline Confidence Notches:** Instead of numeric confidence, show a 5-notch gauge using custom characters: `[●●●●○]` for 80%. Layout engine sizes the gauge as an atomic inline block.
-- [ ] **Side-by-Side Rename Preview:** Show old and new directory names in adjacent columns with diff-highlighted segments. The layout engine calculates column widths dynamically — wider name gets more space, up to 60/40 split.
-- [ ] **Mini Directory Fingerprints:** Generate a tiny visual "fingerprint" per directory using Braille characters based on its file composition. Directories with similar structures produce visually similar patterns — a glanceable similarity signal.
+- [x] **Sparkline Integration:** Embed tiny, layout-aligned bar charts inside text blocks (e.g., `[████░░░] 70% TS`). The layout engine treats the sparkline as an atomic inline segment with a fixed column width.
+- [x] **Breadcrumb Shrinking:** Progressively collapse parent folders in long paths (e.g., `s/c/s/u/b/Button.tsx`) using layout to determine the exact fit for the current width. Collapse deepest segments first to preserve the most context.
+- [x] **Diff-Highlighting:** Animate "pulses" or highlights on specific character offsets when showing renames (e.g., highlighting only the `--pure-ts` suffix). Compute the minimal edit distance between old and new names; highlight only the changed segments.
+- [x] **In-Line Search Highlighting:** Use layout cursors to find exact line and character offsets for search matches within wrapped text, allowing the UI to underline or invert matches even when they span a line break.
+- [x] **Braille-Resolution Charts:** Use Unicode Braille characters (2x4 dot grid per cell) for high-resolution inline visualizations. A single terminal row can show 4 vertical data points. Render file-type distribution, confidence histograms, or directory depth profiles at 2x the vertical resolution of block characters.
+- [x] **Tree Connection Lines:** Draw proper box-drawing connectors (`├──`, `└──`, `│`) for directory tree views. The layout engine tracks depth and sibling position so connectors align perfectly even when content wraps to multiple lines. Last-child detection switches `├` to `└`.
+- [x] **Confidence Heat Gradient:** Map confidence scores (0.0-1.0) to a color gradient using 256-color or truecolor ANSI. Low confidence = warm (red/yellow), high confidence = cool (green/cyan). Apply to backgrounds, text, or inline indicator blocks.
+- [x] **File-Type Distribution Bars:** For each directory dossier, show a proportional horizontal bar of file types using colored block characters: `████████░░░░` where each color represents .ts, .js, .json, etc. Layout engine ensures the bar fits available width.
+- [x] **Unicode Block-Element Heatmaps:** Use block elements (`▁▂▃▄▅▆▇█`) to render compact heatmaps of directory activity, file sizes, or nesting depth. Each character encodes a value in 8 levels within a single cell.
+- [x] **Inline Confidence Notches:** Instead of numeric confidence, show a 5-notch gauge using custom characters: `[●●●●○]` for 80%. Layout engine sizes the gauge as an atomic inline block.
+- [x] **Side-by-Side Rename Preview:** Show old and new directory names in adjacent columns with diff-highlighted segments. The layout engine calculates column widths dynamically — wider name gets more space, up to 60/40 split.
+- [x] **Mini Directory Fingerprints:** Generate a tiny visual "fingerprint" per directory using Braille characters based on its file composition. Directories with similar structures produce visually similar patterns — a glanceable similarity signal.
 
 ---
 

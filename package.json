@@ -21,7 +21,8 @@
     "tui:fixture": "bun --conditions=browser run src--cli-and-pipeline/cli.ts tui fixtures--sample-repos/sample-repo",
     "test:typeset": "bun run src--tui-and-renderer/typeset.test.ts",
     "test:motion": "bun --conditions=browser run src--tui-and-renderer/motion.test.ts",
-    "test": "bun run test:typeset && bun run test:motion"
+    "test:visualize": "bun run src--tui-and-renderer/visualize.test.ts",
+    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize"
   },
   "dependencies": {
     "solid-js": "^1.9.12"
