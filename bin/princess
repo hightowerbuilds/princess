@@ -2,4 +2,4 @@
 # Princess CLI wrapper
 # Sets --conditions=browser so SolidJS reactivity works in the TUI
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
-exec bun --conditions=browser "$SCRIPT_DIR/../src--cli-and-pipeline/cli.ts" "$@"
+exec bun --conditions=browser "$SCRIPT_DIR/../src/cli/index.ts" "$@"

@@ -1,7 +1,6 @@
 {
-  "name": "princess",
+  "name": "princess-cli",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "engines": {
     "bun": ">=1.3.10"
@@ -10,22 +9,14 @@
     "princess": "./bin/princess"
   },
   "scripts": {
-    "start": "bun --conditions=browser run src--cli-and-pipeline/cli.ts",
-    "dry-run:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run",
-    "dry-run:fixture:json": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --dry-run --json",
-    "apply:fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/sample-repo --force",
-    "verify:fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/sample-repo-princess",
-    "dry-run:config-fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/config-rewrite-repo --dry-run",
-    "apply:config-fixture": "bun run src--cli-and-pipeline/cli.ts optimize fixtures--sample-repos/config-rewrite-repo --force",
-    "verify:config-fixture": "bun run src--cli-and-pipeline/cli.ts verify fixtures--sample-repos/config-rewrite-repo-princess",
-    "tui:fixture": "bun --conditions=browser run src--cli-and-pipeline/cli.ts tui fixtures--sample-repos/sample-repo",
-    "test:typeset": "bun run src--tui-and-renderer/typeset.test.ts",
-    "test:motion": "bun --conditions=browser run src--tui-and-renderer/motion.test.ts",
-    "test:visualize": "bun run src--tui-and-renderer/visualize.test.ts",
-    "test:aesthetics": "bun run src--tui-and-renderer/aesthetics.test.ts",
-    "test:compositor": "bun run src--tui-and-renderer/compositor.test.ts",
-    "test:interaction": "bun run src--tui-and-renderer/interaction.test.ts",
-    "test:accessibility": "bun run src--tui-and-renderer/accessibility.test.ts",
+    "start": "bun --conditions=browser run src/cli/index.ts",
+    "test:typeset": "bun run src/tui/typeset.test.ts",
+    "test:motion": "bun --conditions=browser run src/tui/motion.test.ts",
+    "test:visualize": "bun run src/tui/visualize.test.ts",
+    "test:aesthetics": "bun run src/tui/aesthetics.test.ts",
+    "test:compositor": "bun run src/tui/compositor.test.ts",
+    "test:interaction": "bun run src/tui/interaction.test.ts",
+    "test:accessibility": "bun run src/tui/accessibility.test.ts",
     "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics && bun run test:compositor && bun run test:interaction && bun run test:accessibility"
   },
   "dependencies": {
