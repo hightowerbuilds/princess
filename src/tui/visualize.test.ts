@@ -23,6 +23,7 @@ import {
   directoryFingerprint,
   _categorizeExt,
 } from "./visualize.ts";
+import { getCapabilities } from "./terminal.ts";
 import { stringWidth } from "./typeset-compose.ts";
 
 let passed = 0;
@@ -255,8 +256,10 @@ section("confidenceText");
 {
   const t = confidenceText(0.8, "good");
   assert(t.includes("good"), "text preserved");
-  // rgb() is a no-op in test env — just verify text passes through
-  assertEq(t, "good", "text passes through when truecolor unavailable");
+  // rgb() only passes through if truecolor is unavailable
+  if (!getCapabilities().supportsTrueColor) {
+    assertEq(t, "good", "text passes through when truecolor unavailable");
+  }
 }
 
 section("confidenceBar");

@@ -1,18 +1,33 @@
 import type { TuiState } from "../state.ts";
-import { dim, bold, cyan, bgDodgerBlue, black } from "../colors.ts";
+import { dim, bgGray, white, black, cyan, green, yellow } from "../colors.ts";
 import { prepare, layout, materializeToStrings } from "../typeset.ts";
 import path from "node:path";
+import { parsePromptDocument } from "../../prompts.ts";
 
 export function renderEditor(state: TuiState, cols: number, rows: number): string[] {
   const currentFile = state.currentFile();
   const content = state.fileContent();
   const cLine = state.editorCursorLine();
   const cCol = state.editorCursorCol();
+  const saveState = state.editorSaveState();
 
   const lines: string[] = [];
   const filename = currentFile ? path.basename(currentFile) : "Untitled";
+  const parsed = parsePromptDocument(content);
 
-  lines.push(bgDodgerBlue(black(` Editor: ${filename.padEnd(cols - 10)} `)));
+  lines.push(bgGray(white(` Editor: ${filename.padEnd(cols - 10)} `)));
+  if (parsed.hasFrontmatter) {
+    const meta = parsed.metadata;
+    const status = meta.status ? (meta.status === "ready" ? green(`[${meta.status}]`) : meta.status === "draft" ? yellow(`[${meta.status}]`) : cyan(`[${meta.status}]`)) : "";
+    const category = meta.category ? dim(`[${meta.category}]`) : "";
+    const updated = meta.updatedAt ? dim(`updated ${meta.updatedAt.slice(0, 10)}`) : "";
+    lines.push(dim(` ${status} ${category} ${updated}`.trim()));
+  }
+  if (saveState !== "clean") {
+    lines.push(dim(` ${saveState === "saving" ? "[saving]" : saveState === "dirty" ? "[dirty]" : "[save error]"}`));
+  } else {
+    lines.push(dim(" [saved]"));
+  }
   lines.push("");
 
   const contentLines = content.split('\n');
@@ -34,7 +49,7 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
     if (lineStr.length === 0) {
       if (isCursorLine) {
         cursorVisualIdx = visualBuffer.length;
-        visualBuffer.push({ text: `${dim((i + 1).toString().padStart(4))} │ ${bgDodgerBlue(black(" "))}`, isCursor: true });
+        visualBuffer.push({ text: `${dim((i + 1).toString().padStart(4))} │ ${bgGray(white(" "))}`, isCursor: true });
       } else {
         visualBuffer.push({ text: `${dim((i + 1).toString().padStart(4))} │ `, isCursor: false });
       }
@@ -60,7 +75,7 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
         before = before.slice(0, -1);
       }
 
-      const markedText = before + bgDodgerBlue(black(at)) + "\u200B" + after;
+      const markedText = before + bgGray(white(at)) + "\u200B" + after;
       const p = prepare(markedText, { whiteSpace: "pre-wrap", wordBreak: "break-all" });
       chunks = materializeToStrings(p, layout(p, maxLen));
     }
@@ -100,7 +115,7 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
   }
 
   lines.push("");
-  lines.push(dim(` [Esc] Inbox  [PgUp/PgDn] Scroll  [Ctrl+C] Copy  Ln ${cLine + 1}, Col ${cCol + 1} `));
+  lines.push(dim(` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `));
 
   return lines;
 }

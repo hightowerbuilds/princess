@@ -3,8 +3,9 @@ import path from "node:path";
 import { mkdir, writeFile, readdir, stat, rename, rmdir } from "node:fs/promises";
 import { runTui } from "../tui/tui.ts";
 import { getPaths } from "../paths.ts";
+import { buildPromptDocument, sanitizePromptTitle } from "../prompts.ts";
 
-function getAgentInstructions(inboxDir: string) {
+export function getAgentInstructions(inboxDir: string) {
   return `# Princess Prompt Stacker: Agent Instructions
 
 You are reading this because the user has asked you to interact with **Princess**, their global Prompt Stacker. Princess is a terminal-based inbox and text editor designed specifically for managing complex prompts.
@@ -16,7 +17,7 @@ The Princess inbox is located at:
 **\`${inboxDir}\`**
 *(Note: This path may be customized via environment variables).*
 
-All prompts are stored as standard Markdown (\`.md\`) files in this directory.
+All prompts are stored as standard Markdown (\`.md\`) files in this directory, usually with a short frontmatter block for metadata such as title, category, status, and timestamps.
 
 ## How to Interact with Princess
 
@@ -27,7 +28,7 @@ Do not just output the prompt in the chat. Instead, deposit it directly into the
    \`\`\`bash
    princess create-prompt "Title of the Prompt" [--category "optional/subfolder"]
    \`\`\`
-   *This will create a new, sanitized markdown file (e.g., \`${path.join(inboxDir, "optional", "subfolder", "title-of-the-prompt.md")}\`) with the title pre-filled.*
+   *This will create a new, sanitized markdown file (e.g., \`${path.join(inboxDir, "optional", "subfolder", "title-of-the-prompt.md")}\`) with frontmatter and the title pre-filled.*
 
 2. **Write the content:** Use your standard file writing/editing tools to overwrite or append the actual prompt content to that newly created file in the \`${inboxDir}\` directory.
 
@@ -43,6 +44,7 @@ If the user asks you to update or refine a prompt that is already in Princess:
 1. Locate the file in \`${inboxDir}\` (e.g., \`${path.join(inboxDir, "existing-prompt.md")}\`).
 2. Read the file to understand its current state.
 3. Use your standard file-editing tools (like replace/write) to modify the markdown file directly.
+4. If you need to review prior versions, use Princess's revision history. The TUI can open the latest diff with \`Ctrl+R\` from the editor.
 
 ## Human Handoff
 Once you have created or edited a prompt in the inbox, simply tell the user:
@@ -51,7 +53,7 @@ Once you have created or edited a prompt in the inbox, simply tell the user:
 The user will use the Princess Terminal User Interface (TUI) to handle it from there.`;
 }
 
-async function performMigrationIfNecessary(paths: ReturnType<typeof getPaths>) {
+export async function performMigrationIfNecessary(paths: ReturnType<typeof getPaths>) {
   if (paths.isLocal) return; // Do not migrate global settings into a local workspace
 
   try {
@@ -96,7 +98,7 @@ async function performMigrationIfNecessary(paths: ReturnType<typeof getPaths>) {
   }
 }
 
-async function bootstrap(isLocal: boolean = false) {
+export async function bootstrap(isLocal: boolean = false) {
   if (isLocal) {
     // If local, we must create the directory before calling getPaths so that it gets detected
     const localPrincessDir = path.join(process.cwd(), ".princess");
@@ -129,15 +131,13 @@ async function ensureInbox(subpath: string = "") {
   return targetDir;
 }
 
-async function createPrompt(title: string, category: string = "") {
+export async function createPrompt(title: string, category: string = "") {
   const targetDir = await ensureInbox(category);
   
-  // Sanitize title for filename
-  const sanitized = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  const filename = `${sanitized}.md`;
+  const filename = `${sanitizePromptTitle(title)}.md`;
   const filepath = path.join(targetDir, filename);
 
-  const initialContent = `# ${title}\n\n`;
+  const initialContent = buildPromptDocument(title, { category, status: "draft" });
 
   try {
     await writeFile(filepath, initialContent, { flag: "wx" });
@@ -151,8 +151,9 @@ async function createPrompt(title: string, category: string = "") {
   }
 }
 
-async function listPrompts(category: string = "") {
-  const targetDir = await ensureInbox(category);
+export async function listPrompts(category: string = "") {
+  const paths = getPaths();
+  const targetDir = path.join(paths.inboxDir, category);
   try {
     const entries = await readdir(targetDir, { withFileTypes: true });
     
@@ -174,7 +175,30 @@ async function listPrompts(category: string = "") {
   }
 }
 
-async function main() {
+export async function seedExamples(inboxDir: string) {
+  const examplesDir = path.join(inboxDir, "examples");
+  await mkdir(examplesDir, { recursive: true });
+
+  const examples = [
+    {
+      title: "Welcome to Princess",
+      content: "Princess is a local prompt inbox for humans and coding agents.\n\nIt stores prompts as ordinary Markdown files and provides a small CLI plus a terminal UI for creating, browsing, copying, and editing them.\n\n### Key Controls\n- **Arrow keys/j/k**: Navigate\n- **Enter**: Open/Edit\n- **c**: Copy to clipboard\n- **d**: Delete\n- **/**: Search",
+    },
+    {
+      title: "How to use with AI Agents",
+      content: "When you want an agent to save a prompt for you, just tell it:\n'Save this to my Princess inbox'.\n\nThe agent will use the `princess create-prompt` command and then write the file content. You can find the full protocol in the `AGENT.md` file in your config directory.",
+    }
+  ];
+
+  for (const ex of examples) {
+    const filename = `${sanitizePromptTitle(ex.title)}.md`;
+    const filepath = path.join(examplesDir, filename);
+    const content = buildPromptDocument(ex.title, { category: "examples", status: "ready" }) + ex.content;
+    await writeFile(filepath, content, { flag: "wx" }).catch(() => {});
+  }
+}
+
+export async function main() {
   const { positionals, values } = parseArgs({
     args: process.argv.slice(2),
     allowPositionals: true,
@@ -207,6 +231,17 @@ async function main() {
       await listPrompts(category);
       break;
     case "tui":
+      const isFirstRun = await stat(paths.agentFile).catch(() => null) === null;
+      if (isFirstRun) {
+        console.log("Welcome to Princess! It looks like this is your first time running it.");
+        console.log(`Princess stores your prompts globally at ${paths.inboxDir} by default.`);
+        console.log("You can also create a project-local inbox by running `princess init --local` in any project folder.");
+        console.log("\nInitializing your global inbox and seeding some examples...");
+        await bootstrap(false);
+        await seedExamples(paths.inboxDir);
+        console.log("\nLaunching TUI in 3 seconds...");
+        await new Promise(r => setTimeout(r, 3000));
+      }
       await runTui({});
       break;
     case "uninstall":
@@ -235,7 +270,9 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}

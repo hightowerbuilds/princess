@@ -3,6 +3,10 @@ import type { TuiState } from "./state.ts";
 import { write } from "./terminal.ts";
 import { renderInbox } from "./views/inbox.ts";
 import { renderEditor } from "./views/editor.ts";
+import { renderDiff } from "./views/diff.ts";
+import { renderRevisions } from "./views/revisions.ts";
+import { renderRevisionPreview } from "./views/revision-preview.ts";
+import { renderHelp } from "./views/help.ts";
 
 export function createRenderer(state: TuiState): void {
   let pendingFrame: string | null = null;
@@ -66,6 +70,14 @@ function buildLines(state: TuiState, cols: number, rows: number): string[] {
     return renderInbox(state, cols, rows);
   } else if (currentScreen === "editor") {
     return renderEditor(state, cols, rows);
+  } else if (currentScreen === "diff") {
+    return renderDiff(state, cols, rows);
+  } else if (currentScreen === "revisions") {
+    return renderRevisions(state, cols, rows);
+  } else if (currentScreen === "revision-preview") {
+    return renderRevisionPreview(state, cols, rows);
+  } else if (currentScreen === "help") {
+    return renderHelp(state, cols, rows);
   }
   return ["Unknown screen"];
 }

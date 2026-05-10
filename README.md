@@ -2,33 +2,32 @@
 
 Princess is a local prompt inbox for humans and coding agents.
 
-It stores prompts as ordinary Markdown files in `~/.princess/inbox` and provides a small CLI plus a terminal UI for creating, browsing, copying, and editing them.
+It stores prompts as ordinary Markdown files and provides a small CLI plus a terminal UI for creating, browsing, copying, and editing them.
 
 The goal is simple: when an agent drafts a useful prompt, it can deposit that prompt somewhere durable and human-readable instead of leaving it buried in chat history.
 
 ## What It Does
 
-- Creates a global Princess home at `~/.local/share/princess` and `~/.config/princess`
-- Stores prompts as `.md` files under `~/.local/share/princess/inbox`
-- Supports optional inbox subfolders with `--category`
-- Writes an agent instruction file at `~/.config/princess/AGENT.md`
-- Provides a terminal inbox for navigating prompt files and folders
-- Opens prompt files in a simple terminal editor
-- Copies prompts to the system clipboard
-- Leaves prompt data as plain files, not a database
+- **Dynamic Storage**: Uses XDG-compliant global paths by default, but supports project-local inboxes in `.princess/`.
+- **First-Run Onboarding**: Automatically initializes your environment and seeds example prompts on first launch.
+- **Agent Integration**: Writes a standard `AGENT.md` contract to guide AI agents in using your inbox.
+- **TUI Inbox**: A fast, terminal-based browser for your prompts and category folders.
+- **Minimal Editor**: A focused text editor with auto-save, atomic writes, and full revision history.
+- **Atomic Persistence**: Prevents data loss with write-to-temp-then-rename updates and stale file cleanup.
+- **Clipboard Support**: Copy prompts or revisions to your system clipboard instantly.
 
 ## Install
 
 Princess currently targets Bun.
 
-From this repo:
+To install it globally from this repo on a machine where `~/.bun/bin` is on your `PATH`:
 
 ```bash
 bun install
-bun link
+ln -sf "$(pwd)/bin/princess" ~/.bun/bin/princess
 ```
 
-After linking, the `princess` command should be available in your shell.
+After linking, the `princess` command should be available in your shell as a global link to this checkout.
 
 You can also run it directly:
 
@@ -38,11 +37,23 @@ You can also run it directly:
 
 ## CLI
 
-Initialize the global inbox and agent instructions:
+Princess features a guided first-run experience. Simply run:
 
 ```bash
-princess init
+princess
 ```
+
+...and follow the prompts to initialize your global inbox.
+
+### Local Workspaces
+
+To create a project-specific inbox in your current directory:
+
+```bash
+princess init --local
+```
+
+### Prompt Management
 
 Create a prompt:
 
@@ -78,6 +89,7 @@ From the inbox:
 - `Enter` opens the selected file or folder
 - `j` / `k` or arrow keys move selection
 - `PgUp` / `PgDn` scroll
+- `/` enters live search mode over prompt title, category, status, body, and path
 - `c` copies the selected prompt
 - `d` deletes the selected file or empty folder
 - `q`, `Esc`, or `Ctrl+C` quits
@@ -90,10 +102,12 @@ From the editor:
 - `Ctrl+U` / `Ctrl+D` half-page scroll
 - `Backspace` deletes text
 - `Enter` inserts a newline
+- `Ctrl+S` saves a revision snapshot
+- `Ctrl+R` opens a diff against the latest saved revision
 - `Ctrl+C` copies the current prompt
 - `Esc` returns to the inbox
 
-Edits are written back to the Markdown file as you type.
+Edits are debounced to disk, and saved versions are stored as plain-file revision history under the Princess data directory.
 
 ## Agent Workflow
 
@@ -101,23 +115,11 @@ Princess is meant to be easy for agents to use without opening the TUI.
 
 When a user asks an agent to save a prompt in Princess, the intended flow is:
 
-```bash
-princess create-prompt "Prompt Title"
-```
+1. **Create**: `princess create-prompt "Prompt Title"`
+2. **Write**: The agent writes the Markdown content directly to the newly created file.
+3. **Handoff**: The agent notifies the user: *"I have saved the prompt to your inbox. Run `princess tui` to view and edit it."*
 
-Then the agent writes the full prompt into the created Markdown file under:
-
-```text
-~/.princess/inbox/
-```
-
-After that, the agent can tell the user:
-
-```text
-I have saved the prompt to your inbox. Run `princess tui` to view and edit it.
-```
-
-The `princess init` command writes this contract to `~/.princess/AGENT.md`.
+The dynamic path to your inbox is stored in `AGENT.md` within your Princess config directory.
 
 ## Project Layout
 

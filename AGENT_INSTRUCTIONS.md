@@ -1,15 +1,13 @@
 # Princess Prompt Stacker: Agent Instructions
 
-You are reading this because the user has asked you to interact with **Princess**, their global Prompt Stacker. Princess is a terminal-based inbox and text editor designed specifically for managing complex prompts.
+You are reading this because the user has asked you to interact with **Princess**, their Prompt Stacker. Princess is a terminal-based inbox and text editor designed specifically for managing complex prompts.
 
 Whenever the user asks you to "draft a prompt," "save this to my inbox," or "put this in Princess," you should follow these protocols.
 
 ## The Inbox Location
-The Princess inbox is located globally at:
-**`~/.local/share/princess/inbox/`**
-*(Note: This path may be customized via environment variables like XDG_DATA_HOME or PRINCESS_HOME).*
+Princess stores prompts as standard Markdown (`.md`) files in an inbox directory. This directory may be global (XDG-compliant) or project-local (`.princess/inbox/`).
 
-All prompts are stored as standard Markdown (`.md`) files in this directory.
+**To find the current inbox path, check the environment variables or the specific `AGENT.md` file in the user's config directory.**
 
 ## How to Interact with Princess
 
@@ -20,20 +18,20 @@ Do not just output the prompt in the chat. Instead, deposit it directly into the
    ```bash
    princess create-prompt "Title of the Prompt"
    ```
-   *This will create a new, sanitized markdown file (e.g., `~/.local/share/princess/inbox/title-of-the-prompt.md`) with the title pre-filled.*
+   *This will create a new, sanitized markdown file with frontmatter and the title pre-filled.*
 
-2. **Write the content:** Use your standard file writing/editing tools to overwrite or append the actual prompt content to that newly created file in the `~/.local/share/princess/inbox/` directory.
+2. **Write the content:** Use your standard file writing/editing tools to overwrite or append the actual prompt content to that newly created file in the inbox directory.
 
 ### 2. Viewing the Inbox
 To see what prompts currently exist in the user's inbox, run:
 ```bash
 princess list
 ```
-Or simply read the contents of the `~/.local/share/princess/inbox/` directory.
+Or read the contents of the inbox directory.
 
 ### 3. Editing an Existing Prompt
 If the user asks you to update or refine a prompt that is already in Princess:
-1. Locate the file in `~/.local/share/princess/inbox/` (e.g., `~/.local/share/princess/inbox/existing-prompt.md`).
+1. Locate the file in the inbox directory.
 2. Read the file to understand its current state.
 3. Use your standard file-editing tools (like replace/write) to modify the markdown file directly.
 

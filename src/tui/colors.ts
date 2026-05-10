@@ -76,6 +76,11 @@ export function bgDodgerBlue(text: string): string {
   return `\x1b[48;2;30;144;255m${text}\x1b[49m`;
 }
 
+export function bgGray(text: string): string {
+  if (!getCapabilities().supportsTrueColor) return sgr("100", "49", text);
+  return `\x1b[48;2;36;36;36m${text}\x1b[49m`;
+}
+
 export function bgCyan(text: string): string {
   return sgr("46", "49", text);
 }

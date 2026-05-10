@@ -10,6 +10,11 @@
   },
   "scripts": {
     "start": "bun --conditions=browser run src/cli/index.ts",
+    "test:cli": "bun run src/cli/index.test.ts",
+    "test:prompts": "bun run src/prompts.test.ts",
+    "test:revisions": "bun run src/revisions.test.ts",
+    "test:storage": "bun run src/storage.test.ts",
+    "test:views": "bun run src/tui/views.test.ts",
     "test:typeset": "bun run src/tui/typeset.test.ts",
     "test:motion": "bun --conditions=browser run src/tui/motion.test.ts",
     "test:visualize": "bun run src/tui/visualize.test.ts",
@@ -17,7 +22,7 @@
     "test:compositor": "bun run src/tui/compositor.test.ts",
     "test:interaction": "bun run src/tui/interaction.test.ts",
     "test:accessibility": "bun run src/tui/accessibility.test.ts",
-    "test": "bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics && bun run test:compositor && bun run test:interaction && bun run test:accessibility"
+    "test": "bun run test:cli && bun run test:prompts && bun run test:storage && bun run test:revisions && bun run test:views && bun run test:typeset && bun run test:motion && bun run test:visualize && bun run test:aesthetics && bun run test:compositor && bun run test:interaction && bun run test:accessibility"
   },
   "dependencies": {
     "solid-js": "^1.9.12"

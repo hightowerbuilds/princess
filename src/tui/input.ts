@@ -123,6 +123,13 @@ function parseKeyEvents(data: Buffer): KeyEvent[] {
       continue;
     }
 
+    // Ctrl+/ or Ctrl+?
+    if (byte === 0x1f) {
+      events.push(key("ctrl+/", data, true));
+      offset += 1;
+      continue;
+    }
+
     // Ctrl+letter (0x01-0x1a)
     if (byte >= 0x01 && byte <= 0x1a) {
       const letter = String.fromCharCode(byte + 0x60);
