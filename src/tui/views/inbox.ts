@@ -1,6 +1,7 @@
 import type { TuiState } from "../state.ts";
 import { dim, bgDodgerBlue, black, bgPink, bgGreen } from "../colors.ts";
 import path from "node:path";
+import { getPaths } from "../../paths.ts";
 
 const LOGO = [
   "PPPP  RRRR  III N   N  CCC  EEEEE  SSS   SSS ",
@@ -37,7 +38,13 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   
   lines.push(...renderLogo());
   lines.push("");
-  lines.push(dim(" ──────────────────────────────────────────────"));
+  const paths = getPaths();
+  if (paths.isLocal) {
+    lines.push(dim(" ────────────────────────────────────────────── ") + bgPink(black(" PROJECT LOCAL ")));
+  } else {
+    lines.push(dim(" ──────────────────────────────────────────────"));
+  }
+  
   if (currentDir) {
     lines.push(dim(` /${currentDir}`));
     lines.push(dim(" ──────────────────────────────────────────────"));
@@ -50,22 +57,11 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   }
 
   if (files.length === 0) {
-    lines.push(dim(" Inbox is empty. Waiting for prompts..."));
+    lines.push("  (Inbox is empty)");
   } else {
-    const end = Math.min(files.length, offset + listHeight);
-    for (let i = offset; i < end; i++) {
+    for (let i = offset; i < Math.min(files.length, offset + listHeight); i++) {
       const entry = files[i];
-      let displayString = "";
-
-      if (entry.isDirectory) {
-        if (entry.name === "..") {
-          displayString = `${bgGreen(" ")} ${entry.name} (Up)`;
-        } else {
-          displayString = `${bgPink(" ")} ${entry.name}/`;
-        }
-      } else {
-        displayString = `  ${entry.name}`;
-      }
+      let displayString = entry.isDirectory ? `${entry.name}/` : entry.name;
 
       if (i === cursor) {
         let rawText = entry.isDirectory ? (entry.name === ".." ? `  ${entry.name} (Up)` : `  ${entry.name}/`) : `  ${entry.name}`;

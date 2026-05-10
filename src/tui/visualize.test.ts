@@ -23,7 +23,7 @@ import {
   directoryFingerprint,
   _categorizeExt,
 } from "./visualize.ts";
-import { stringWidth } from "./typeset.ts";
+import { stringWidth } from "./typeset-compose.ts";
 
 let passed = 0;
 let failed = 0;

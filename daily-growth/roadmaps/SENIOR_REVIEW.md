@@ -97,9 +97,9 @@ This logic breaks as soon as a tab character, an Emoji, or an ANSI color code en
 
 We don't need to throw this away, but we need to "stop playing framework" and start "building the app."
 
-### Phase 1: The Great Purge
-- **Delete** `motion.ts`, `compositor.ts`, and `typeset.ts` if they aren't going to be used. Or, better yet...
-- **Actually use them.** Replace the manual wrapping in `editor.ts` with the `typeset.ts` engine. Replace the manual "dimming" in the renderer with actual cross-fading logic from the physics engine.
+### Phase 1: Surgical Integration (Formerly "The Great Purge")
+*Note: A wholesale purge of `motion.ts`, `compositor.ts`, and `typeset.ts` was attempted and failed. These infrastructure files are deeply intertwined as core dependencies for modules like `typeset-compose.ts` and `visualize.ts`. Deleting them breaks the build.*
+- **Actually use them.** Instead of deleting them, we must integrate them where they belong. Replace the manual wrapping in `editor.ts` with the `typeset.ts` engine. (Note: The fake "dimming" in the renderer has already been removed).
 
 ### Phase 2: Reactive Refactoring
 - Move the input handling into the SolidJS reactive graph. Keypresses should update signals, and effects should respond to those signals. Get rid of the `while(true)` loop and the `activeKeyResolver` promise.

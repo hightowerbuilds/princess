@@ -5,6 +5,7 @@ import { readdir, readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import type { KeyEvent } from "./input.ts";
 import type { TuiState } from "./state.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { getPaths } from "../paths.ts";
 
 type KeyResolver = (key: KeyEvent) => void;
 let activeKeyResolver: KeyResolver | null = null;
@@ -18,7 +19,7 @@ export function handleKey(key: KeyEvent, _state: TuiState): void {
 }
 
 export async function runApp(state: TuiState): Promise<void> {
-  const baseInboxDir = path.join(os.homedir(), ".princess", "inbox");
+  const { inboxDir: baseInboxDir } = getPaths();
   
   // Ensure base inbox directory exists
   try {
@@ -349,16 +350,16 @@ function waitForEditor(state: TuiState, filepath: string): Promise<void> {
         }
       }
 
-      if (needsSave) {
+      if (key.name === "s" && key.ctrl) {
         content = lines.join('\n');
         await writeFile(filepath, content, "utf8");
       }
 
       batch(() => {
-        state.setFileContent(content);
+        state.setFileContent(lines.join('\n'));
         state.setEditorCursorLine(cLine);
         state.setEditorCursorCol(cCol);
       });
     };
-  });
-}
+    });
+    }

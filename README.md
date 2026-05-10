@@ -8,10 +8,10 @@ The goal is simple: when an agent drafts a useful prompt, it can deposit that pr
 
 ## What It Does
 
-- Creates a global Princess home at `~/.princess`
-- Stores prompts as `.md` files under `~/.princess/inbox`
+- Creates a global Princess home at `~/.local/share/princess` and `~/.config/princess`
+- Stores prompts as `.md` files under `~/.local/share/princess/inbox`
 - Supports optional inbox subfolders with `--category`
-- Writes an agent instruction file at `~/.princess/AGENT.md`
+- Writes an agent instruction file at `~/.config/princess/AGENT.md`
 - Provides a terminal inbox for navigating prompt files and folders
 - Opens prompt files in a simple terminal editor
 - Copies prompts to the system clipboard

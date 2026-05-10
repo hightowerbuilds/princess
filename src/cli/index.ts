@@ -1,21 +1,20 @@
 import { parseArgs } from "util";
 import path from "node:path";
-import { mkdir, writeFile, readdir } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, writeFile, readdir, stat, rename, rmdir } from "node:fs/promises";
 import { runTui } from "../tui/tui.ts";
+import { getPaths } from "../paths.ts";
 
-const INBOX_DIR = path.join(os.homedir(), ".princess", "inbox");
-const AGENT_FILE = path.join(os.homedir(), ".princess", "AGENT.md");
-
-const AGENT_INSTRUCTIONS = `# Princess Prompt Stacker: Agent Instructions
+function getAgentInstructions(inboxDir: string) {
+  return `# Princess Prompt Stacker: Agent Instructions
 
 You are reading this because the user has asked you to interact with **Princess**, their global Prompt Stacker. Princess is a terminal-based inbox and text editor designed specifically for managing complex prompts.
 
 Whenever the user asks you to "draft a prompt," "save this to my inbox," or "put this in Princess," you should follow these protocols.
 
 ## The Inbox Location
-The Princess inbox is located globally at:
-**\`~/.princess/inbox/\`**
+The Princess inbox is located at:
+**\`${inboxDir}\`**
+*(Note: This path may be customized via environment variables).*
 
 All prompts are stored as standard Markdown (\`.md\`) files in this directory.
 
@@ -28,20 +27,20 @@ Do not just output the prompt in the chat. Instead, deposit it directly into the
    \`\`\`bash
    princess create-prompt "Title of the Prompt" [--category "optional/subfolder"]
    \`\`\`
-   *This will create a new, sanitized markdown file (e.g., \`~/.princess/inbox/optional/subfolder/title-of-the-prompt.md\`) with the title pre-filled.*
+   *This will create a new, sanitized markdown file (e.g., \`${path.join(inboxDir, "optional", "subfolder", "title-of-the-prompt.md")}\`) with the title pre-filled.*
 
-2. **Write the content:** Use your standard file writing/editing tools to overwrite or append the actual prompt content to that newly created file in the \`~/.princess/inbox/\` directory.
+2. **Write the content:** Use your standard file writing/editing tools to overwrite or append the actual prompt content to that newly created file in the \`${inboxDir}\` directory.
 
 ### 2. Viewing the Inbox
 To see what prompts currently exist in the user's inbox, run:
 \`\`\`bash
 princess list
 \`\`\`
-Or simply read the contents of the \`~/.princess/inbox/\` directory.
+Or simply read the contents of the \`${inboxDir}\` directory.
 
 ### 3. Editing an Existing Prompt
 If the user asks you to update or refine a prompt that is already in Princess:
-1. Locate the file in \`~/.princess/inbox/\` (e.g., \`~/.princess/inbox/existing-prompt.md\`).
+1. Locate the file in \`${inboxDir}\` (e.g., \`${path.join(inboxDir, "existing-prompt.md")}\`).
 2. Read the file to understand its current state.
 3. Use your standard file-editing tools (like replace/write) to modify the markdown file directly.
 
@@ -50,13 +49,68 @@ Once you have created or edited a prompt in the inbox, simply tell the user:
 > *"I have saved the prompt to your inbox. Run \`princess tui\` to view and edit it."*
 
 The user will use the Princess Terminal User Interface (TUI) to handle it from there.`;
+}
 
-async function bootstrap() {
+async function performMigrationIfNecessary(paths: ReturnType<typeof getPaths>) {
+  if (paths.isLocal) return; // Do not migrate global settings into a local workspace
+
   try {
-    await mkdir(INBOX_DIR, { recursive: true });
-    await writeFile(AGENT_FILE, AGENT_INSTRUCTIONS, { flag: "w" });
-    console.log(`Initialized Princess globally at ~/.princess`);
-    console.log(`Agent instructions created at ~/.princess/AGENT.md`);
+    const oldStat = await stat(paths.oldPrincessDir).catch(() => null);
+    if (!oldStat || !oldStat.isDirectory()) {
+      return; // No old directory, nothing to migrate
+    }
+
+    const newStat = await stat(paths.dataDir).catch(() => null);
+    if (newStat) {
+      return; // New directory already exists, don't migrate
+    }
+
+    console.log(`Migrating data from ${paths.oldPrincessDir} to ${paths.dataDir} and ${paths.configDir}...`);
+    
+    // Create new directories
+    await mkdir(paths.dataDir, { recursive: true });
+    await mkdir(paths.configDir, { recursive: true });
+
+    // Move inbox
+    const oldInbox = path.join(paths.oldPrincessDir, "inbox");
+    const oldInboxStat = await stat(oldInbox).catch(() => null);
+    if (oldInboxStat && oldInboxStat.isDirectory()) {
+      await rename(oldInbox, paths.inboxDir);
+    }
+
+    // Move AGENT.md
+    const oldAgent = path.join(paths.oldPrincessDir, "AGENT.md");
+    const oldAgentStat = await stat(oldAgent).catch(() => null);
+    if (oldAgentStat && oldAgentStat.isFile()) {
+      await rename(oldAgent, paths.agentFile);
+    }
+
+    // Try to remove old dir (will only succeed if empty now, which is safe)
+    await rmdir(paths.oldPrincessDir).catch(() => {
+      console.warn(`Could not completely remove old directory ${paths.oldPrincessDir}. You may need to delete it manually.`);
+    });
+    
+    console.log(`Migration complete.`);
+  } catch (err: any) {
+    console.error(`Migration failed: ${err.message}`);
+  }
+}
+
+async function bootstrap(isLocal: boolean = false) {
+  if (isLocal) {
+    // If local, we must create the directory before calling getPaths so that it gets detected
+    const localPrincessDir = path.join(process.cwd(), ".princess");
+    await mkdir(localPrincessDir, { recursive: true });
+    console.log(`Created local project workspace at ${localPrincessDir}`);
+  }
+
+  const paths = getPaths();
+  try {
+    await mkdir(paths.inboxDir, { recursive: true });
+    await mkdir(paths.configDir, { recursive: true });
+    await writeFile(paths.agentFile, getAgentInstructions(paths.inboxDir), { flag: "w" });
+    console.log(`Initialized Princess at ${paths.dataDir}`);
+    console.log(`Agent instructions created at ${paths.agentFile}`);
   } catch (err: any) {
     if (err.code === "EEXIST") {
       // Already bootstrapped, ignore
@@ -67,7 +121,8 @@ async function bootstrap() {
 }
 
 async function ensureInbox(subpath: string = "") {
-  const targetDir = path.join(INBOX_DIR, subpath);
+  const paths = getPaths();
+  const targetDir = path.join(paths.inboxDir, subpath);
   try {
     await mkdir(targetDir, { recursive: true });
   } catch {}
@@ -128,15 +183,21 @@ async function main() {
         type: "string",
         short: "c",
       },
+      local: {
+        type: "boolean",
+      },
     },
   });
 
   const command = positionals[0] || "tui";
   const category = values.category || "";
 
+  const paths = getPaths();
+  await performMigrationIfNecessary(paths);
+
   switch (command) {
     case "init":
-      await bootstrap();
+      await bootstrap(values.local);
       break;
     case "create-prompt":
       const title = positionals.slice(1).join(" ") || "Untitled Prompt";
@@ -148,14 +209,27 @@ async function main() {
     case "tui":
       await runTui({});
       break;
+    case "uninstall":
+      console.log("Uninstalling Princess...");
+      const pths = getPaths();
+      console.log(`\nTo completely remove Princess, please perform the following steps:`);
+      console.log(`1. Delete your data:`);
+      console.log(`   rm -rf ${pths.dataDir}`);
+      console.log(`   rm -rf ${pths.configDir}`);
+      console.log(`\n2. Remove the global symlink:`);
+      console.log(`   rm $(which princess)`);
+      console.log(`\nPrincess will remain available until you remove the symlink.`);
+      break;
     default:
       console.log(`Unknown command: ${command}`);
       console.log(`Usage:`);
       console.log(`  princess init                    Initialize global directories and agent contracts`);
+      console.log(`      --local                      Initialize a project-local workspace in the current directory`);
       console.log(`  princess create-prompt <title>   Create a new prompt in the inbox`);
       console.log(`      --category, -c <name>        (Optional) Put the prompt in a subfolder`);
       console.log(`  princess list                    List prompts in the inbox`);
       console.log(`      --category, -c <name>        (Optional) List a subfolder`);
+      console.log(`  princess uninstall               Instructions for uninstalling Princess`);
       console.log(`  princess tui                     Launch the TUI (default)`);
       process.exit(1);
   }

@@ -1,5 +1,6 @@
 import type { TuiState } from "../state.ts";
 import { dim, bold, cyan, bgDodgerBlue, black } from "../colors.ts";
+import { prepare, layout, materializeToStrings } from "../typeset.ts";
 import path from "node:path";
 
 export function renderEditor(state: TuiState, cols: number, rows: number): string[] {
@@ -40,28 +41,40 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
       continue;
     }
 
-    const numChunks = Math.ceil(lineStr.length / maxLen);
-    
-    for (let chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
-      const chunk = lineStr.slice(chunkIdx * maxLen, (chunkIdx + 1) * maxLen);
+    let chunks: string[];
+
+    if (!isCursorLine) {
+      const p = prepare(lineStr, { whiteSpace: "pre-wrap", wordBreak: "break-all" });
+      chunks = materializeToStrings(p, layout(p, maxLen));
+    } else {
+      let before = lineStr.slice(0, cCol);
+      let at = lineStr[cCol] || " ";
+      let after = lineStr.slice(cCol + 1);
+
+      // Safely extract surrogate pairs to avoid splitting emojis
+      if (at >= "\uD800" && at <= "\uDBFF" && after.length > 0) {
+        at += after[0];
+        after = after.slice(1);
+      } else if (at >= "\uDC00" && at <= "\uDFFF" && before.length > 0) {
+        at = before[before.length - 1] + at;
+        before = before.slice(0, -1);
+      }
+
+      const markedText = before + bgDodgerBlue(black(at)) + "\u200B" + after;
+      const p = prepare(markedText, { whiteSpace: "pre-wrap", wordBreak: "break-all" });
+      chunks = materializeToStrings(p, layout(p, maxLen));
+    }
+
+    if (chunks.length === 0) chunks = [""];
+
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+      const chunk = chunks[chunkIdx];
       const prefix = chunkIdx === 0 ? `${dim((i + 1).toString().padStart(4))} │ ` : `${dim("   ... │ ")}`;
       
-      if (isCursorLine) {
-        const startCol = chunkIdx * maxLen;
-        const endCol = startCol + maxLen;
-        // Check if cursor is in this chunk. Special case: cursor at end of line goes to last chunk.
-        const isCursorHere = (cCol >= startCol && cCol < endCol) || (cCol === lineStr.length && chunkIdx === numChunks - 1);
-        
-        if (isCursorHere) {
-          cursorVisualIdx = visualBuffer.length;
-          const localCol = cCol - startCol;
-          const before = chunk.slice(0, localCol);
-          const at = chunk[localCol] || " ";
-          const after = chunk.slice(localCol + 1);
-          visualBuffer.push({ text: `${prefix}${before}${bgDodgerBlue(black(at))}${after}`, isCursor: true });
-        } else {
-          visualBuffer.push({ text: `${prefix}${chunk}`, isCursor: false });
-        }
+      if (isCursorLine && chunk.includes("\u200B")) {
+        cursorVisualIdx = visualBuffer.length;
+        // Clean up the zero-width space used to anchor the ANSI sequence
+        visualBuffer.push({ text: `${prefix}${chunk.replace("\u200B", "")}`, isCursor: true });
       } else {
         visualBuffer.push({ text: `${prefix}${chunk}`, isCursor: false });
       }
