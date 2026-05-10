@@ -3,6 +3,8 @@ import { dim, bold, bgGray, white, black, bgPink, cyan, green, yellow } from "..
 import path from "node:path";
 import { getPaths } from "../../paths.ts";
 import { truncateEnd } from "../typeset-compose.ts";
+import { box } from "../typeset-compose.ts";
+import { dropShadow } from "../aesthetics.ts";
 
 import { gradientText, gradientTextMulti } from "../aesthetics.ts";
 
@@ -62,29 +64,42 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   const offset = state.inboxScrollOffset();
   const query = state.inboxSearchQuery().trim();
   const searchMode = state.inboxSearchMode();
-  const listHeight = Math.max(rows - 14, 5);
-
+  
   const lines: string[] = [];
   
   lines.push(...renderLogo(state));
   lines.push("");
+
   const paths = getPaths();
+  const locationLines: string[] = [];
   if (paths.isLocal) {
-    lines.push(dim(" ────────────────────────────────────────────── ") + bgPink(black(" PROJECT LOCAL ")));
+    locationLines.push(bgPink(black(" PROJECT LOCAL ")) + dim(` /${currentDir || ""}`));
   } else {
-    lines.push(dim(" ──────────────────────────────────────────────"));
+    locationLines.push(dim(` /${currentDir || "global"}`));
   }
-  
-  if (currentDir) {
-    lines.push(dim(` /${currentDir}`));
-    lines.push(dim(" ──────────────────────────────────────────────"));
-  }
-  lines.push("");
+
+  const locationCard = box(locationLines, cols - 1, {
+    border: "single",
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    borderColor: white,
+    contentStyle: (s) => bgGray(white(s))
+  });
+  lines.push(...dropShadow(locationCard, cols - 1));
 
   if (error) {
     lines.push(` Error: ${error}`);
     lines.push("");
   }
+
+  // Calculate list height based on remaining space
+  // Header logo: ~2 lines
+  // Location card: 3 lines + 1 shadow = 4 lines
+  // Logo spacing: 1 line
+  // Footer: 2 lines
+  // Total overhead: ~9 lines
+  const overhead = lines.length + 3; // +3 for list card borders and shadow
+  const listHeight = Math.max(rows - overhead - 2, 5); 
+  const inboxListLines: string[] = [];
 
   const selected = files[cursor];
   if (selected && !selected.isDirectory && selected.prompt) {
@@ -92,21 +107,21 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
     const category = selected.prompt.metadata.category ? dim(`[${selected.prompt.metadata.category}]`) : "";
     const updatedAt = selected.prompt.metadata.updatedAt ? dim(`updated ${selected.prompt.metadata.updatedAt.slice(0, 10)}`) : "";
     const detailLine = [status, category, updatedAt].filter(Boolean).join(" ");
-    if (detailLine) lines.push(` ${detailLine}`);
+    if (detailLine) inboxListLines.push(` ${detailLine}`);
     if (selected.prompt.preview) {
-      lines.push(dim(` ${truncateEnd(selected.prompt.preview, Math.max(0, cols - 4))}`));
+      inboxListLines.push(dim(` ${truncateEnd(selected.prompt.preview, Math.max(0, cols - 8))}`));
     }
-    lines.push("");
+    inboxListLines.push("");
   } else if (query.length > 0 && files.length === 0) {
-    lines.push(dim(` No matches for "${query}"`));
-    lines.push("");
+    inboxListLines.push(dim(` No matches for "${query}"`));
+    inboxListLines.push("");
   }
 
   if (files.length === 0) {
-    lines.push("  Welcome to Princess.");
-    lines.push("  This inbox is empty, so there is nothing to browse yet.");
-    lines.push("  Create a prompt with `princess create-prompt \"Title\"`.");
-    lines.push("  Press `Ctrl+/` for shortcuts and storage locations.");
+    inboxListLines.push(" Welcome to Princess.");
+    inboxListLines.push(" This inbox is empty, so there is nothing to browse yet.");
+    inboxListLines.push(" Create a prompt with `princess create-prompt \"Title\"`.");
+    inboxListLines.push(" Press `Ctrl+/` for shortcuts and storage locations.");
   } else {
     const stops = getPulseStops(state);
     for (let i = offset; i < Math.min(files.length, offset + listHeight); i++) {
@@ -123,7 +138,7 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
       }
 
       if (!entry.isDirectory && entry.prompt) {
-        displayString += renderPromptMeta(entry, cols);
+        displayString += renderPromptMeta(entry, cols - 4); 
       }
 
       if (i === cursor) {
@@ -138,20 +153,26 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
           rawText = `  ${displayLabel}`;
         }
         
-        const detail = !entry.isDirectory && entry.prompt ? renderPromptMeta(entry, cols) : "";
-        const padded = truncateEnd(` > ${rawText}${detail}`, Math.max(0, cols - 3));
-        lines.push(bgGray(white(` ${padded.padEnd(cols - 2)}`)));
+        const detail = !entry.isDirectory && entry.prompt ? renderPromptMeta(entry, cols - 8) : "";
+        const padded = truncateEnd(` > ${rawText}${detail}`, Math.max(0, cols - 8));
+        inboxListLines.push(bgGray(white(` ${padded.padEnd(cols - 6)}`)));
       } else {
-        lines.push(`   ${truncateEnd(displayString, Math.max(0, cols - 3))}`);
+        inboxListLines.push(`   ${truncateEnd(displayString, Math.max(0, cols - 8))}`);
       }
     }
   }
 
-  // Pad remaining list height
-  const renderedCount = Math.min(files.length, offset + listHeight) - offset;
-  for (let i = renderedCount; i < listHeight; i++) {
-     lines.push("");
+  while (inboxListLines.length < listHeight) {
+    inboxListLines.push("");
   }
+
+  const listCard = box(inboxListLines, cols - 1, {
+    border: "single",
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    borderColor: white,
+    contentStyle: (s) => bgGray(white(s))
+  });
+  lines.push(...dropShadow(listCard, cols - 1));
 
   lines.push("");
   const inputMode = state.inboxInputMode();
@@ -171,6 +192,5 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
     lines.push(dim(" [/] Search   [n] New Folder   [r] Rename   [Enter] Open   [c] Copy   [d] Delete   [Ctrl+/] Help   [q] Quit "));
   }
 
-  // We can wrap it in a box or just return it
   return lines;
 }

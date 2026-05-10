@@ -1,6 +1,8 @@
 import type { TuiState } from "../state.ts";
 import { dim, bgGray, white, black, cyan, green, yellow } from "../colors.ts";
 import { prepare, layout, materializeToStrings } from "../typeset.ts";
+import { box } from "../typeset-compose.ts";
+import { dropShadow } from "../aesthetics.ts";
 import path from "node:path";
 import { parsePromptDocument } from "../../prompts.ts";
 
@@ -11,29 +13,40 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
   const cCol = state.editorCursorCol();
   const saveState = state.editorSaveState();
 
-  const lines: string[] = [];
   const filename = currentFile ? path.basename(currentFile) : "Untitled";
   const parsed = parsePromptDocument(content);
 
-  lines.push(bgGray(white(` Editor: ${filename.padEnd(cols - 10)} `)));
+  // ── Header Card ────────────────────────────────────────────────────────
+  const headerLines: string[] = [];
+  headerLines.push(`Editor: ${filename}`);
+  
   if (parsed.hasFrontmatter) {
     const meta = parsed.metadata;
     const status = meta.status ? (meta.status === "ready" ? green(`[${meta.status}]`) : meta.status === "draft" ? yellow(`[${meta.status}]`) : cyan(`[${meta.status}]`)) : "";
     const category = meta.category ? dim(`[${meta.category}]`) : "";
     const updated = meta.updatedAt ? dim(`updated ${meta.updatedAt.slice(0, 10)}`) : "";
-    lines.push(dim(` ${status} ${category} ${updated}`.trim()));
+    headerLines.push(`${status} ${category} ${updated}`.trim());
   }
-  if (saveState !== "clean") {
-    lines.push(dim(` ${saveState === "saving" ? "[saving]" : saveState === "dirty" ? "[dirty]" : "[save error]"}`));
-  } else {
-    lines.push(dim(" [saved]"));
-  }
-  lines.push("");
-
-  const contentLines = content.split('\n');
-  const maxLen = Math.max(10, cols - 8);
   
-  // Flatten file lines into visual chunks based on width
+  const saveIndicator = saveState !== "clean" 
+    ? (saveState === "saving" ? "[saving]" : saveState === "dirty" ? "[dirty]" : "[save error]")
+    : "[saved]";
+  headerLines.push(dim(saveIndicator));
+
+  const headerCard = box(headerLines, cols - 1, {
+    border: "single",
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    borderColor: white,
+    contentStyle: (s) => bgGray(white(s))
+  });
+
+  // ── Body Card ──────────────────────────────────────────────────────────
+  const contentLines = content.split('\n');
+  // Box has 2 borders + 2 padding = 4 columns overhead
+  // Prefix has 4 (line num) + 3 (pipe) = 7 columns overhead
+  // Shadow has 1 column overhead
+  const maxLen = Math.max(10, cols - 4 - 7 - 4 - 1); 
+  
   interface VisualLine {
     text: string;
     isCursor: boolean;
@@ -66,7 +79,6 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
       let at = lineStr[cCol] || " ";
       let after = lineStr.slice(cCol + 1);
 
-      // Safely extract surrogate pairs to avoid splitting emojis
       if (at >= "\uD800" && at <= "\uDBFF" && after.length > 0) {
         at += after[0];
         after = after.slice(1);
@@ -88,7 +100,6 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
       
       if (isCursorLine && chunk.includes("\u200B")) {
         cursorVisualIdx = visualBuffer.length;
-        // Clean up the zero-width space used to anchor the ANSI sequence
         visualBuffer.push({ text: `${prefix}${chunk.replace("\u200B", "")}`, isCursor: true });
       } else {
         visualBuffer.push({ text: `${prefix}${chunk}`, isCursor: false });
@@ -96,8 +107,11 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
     }
   }
 
-  // Calculate view port based on visual buffer
-  const editorHeight = rows - 4; // Header, footer
+  // Calculate view port
+  const footerHeight = 2;
+  const headerHeight = headerCard.length + 1; // +1 for header shadow
+  const editorHeight = rows - headerHeight - footerHeight - 3; // -2 for borders, -1 for shadow
+  
   let startIdx = Math.max(0, cursorVisualIdx - Math.floor(editorHeight / 2));
   let endIdx = Math.min(visualBuffer.length, startIdx + editorHeight);
 
@@ -105,17 +119,28 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
       startIdx = Math.max(0, endIdx - editorHeight);
   }
 
+  const visibleBodyLines: string[] = [];
   for (let i = startIdx; i < endIdx; i++) {
-    lines.push(visualBuffer[i].text);
+    visibleBodyLines.push(visualBuffer[i].text);
   }
 
   // Pad remaining height
-  while (lines.length < rows - 2) {
-      lines.push(`${dim("   ~ │")}`);
+  while (visibleBodyLines.length < editorHeight) {
+    visibleBodyLines.push(`${dim("   ~ │")}`);
   }
 
-  lines.push("");
-  lines.push(dim(` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `));
+  const bodyCard = box(visibleBodyLines, cols - 1, {
+    border: "single",
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    borderColor: white,
+    contentStyle: (s) => bgGray(white(s))
+  });
 
-  return lines;
+  const finalLines: string[] = [];
+  finalLines.push(...dropShadow(headerCard, cols - 1));
+  finalLines.push(...dropShadow(bodyCard, cols - 1));
+  finalLines.push("");
+  finalLines.push(dim(` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `));
+
+  return finalLines;
 }

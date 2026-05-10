@@ -274,6 +274,8 @@ export interface BoxOptions {
   border?: BorderStyle;
   maxWidth?: number;
   align?: ColumnAlign;
+  borderColor?: (text: string) => string;
+  contentStyle?: (text: string) => string;
 }
 
 const BORDER_CHARS: Record<
@@ -294,6 +296,8 @@ export function box(content: string[], totalWidth: number, options?: BoxOptions)
   const align = options?.align ?? "left";
   const hasBorder = borderStyle !== "none";
   const borderWidth = hasBorder ? 2 : 0;
+  const borderColor = options?.borderColor ?? ((s) => s);
+  const contentStyle = options?.contentStyle ?? ((s) => s);
 
   const chrome = margin.left + margin.right + borderWidth + pad.left + pad.right;
   let contentWidth = totalWidth - chrome;
@@ -316,15 +320,15 @@ export function box(content: string[], totalWidth: number, options?: BoxOptions)
 
   if (hasBorder) {
     const b = BORDER_CHARS[borderStyle as Exclude<BorderStyle, "none">];
-    lines.push(marginL + b.tl + b.h.repeat(innerWidth) + b.tr);
-    for (let i = 0; i < pad.top; i++) lines.push(marginL + b.v + " ".repeat(innerWidth) + b.v);
-    for (const line of paddedContent) lines.push(marginL + b.v + padL + line + padR + b.v);
-    for (let i = 0; i < pad.bottom; i++) lines.push(marginL + b.v + " ".repeat(innerWidth) + b.v);
-    lines.push(marginL + b.bl + b.h.repeat(innerWidth) + b.br);
+    lines.push(marginL + borderColor(b.tl + b.h.repeat(innerWidth) + b.tr));
+    for (let i = 0; i < pad.top; i++) lines.push(marginL + borderColor(b.v) + contentStyle(" ".repeat(innerWidth)) + borderColor(b.v));
+    for (const line of paddedContent) lines.push(marginL + borderColor(b.v) + contentStyle(padL + line + padR) + borderColor(b.v));
+    for (let i = 0; i < pad.bottom; i++) lines.push(marginL + borderColor(b.v) + contentStyle(" ".repeat(innerWidth)) + borderColor(b.v));
+    lines.push(marginL + borderColor(b.bl + b.h.repeat(innerWidth) + b.br));
   } else {
-    const emptyPadLine = marginL + " ".repeat(innerWidth);
+    const emptyPadLine = marginL + contentStyle(" ".repeat(innerWidth));
     for (let i = 0; i < pad.top; i++) lines.push(emptyPadLine);
-    for (const line of paddedContent) lines.push(marginL + padL + line + padR);
+    for (const line of paddedContent) lines.push(marginL + contentStyle(padL + line + padR));
     for (let i = 0; i < pad.bottom; i++) lines.push(emptyPadLine);
   }
 
