@@ -1,0 +1,5 @@
+Criterion	Weight	Scoring Guidance
+User impact	40	Prioritize workflows that reduce repeated agent handoff friction
+Implementation risk	25	Prefer changes that preserve plain files and avoid hidden state
+Demo value	20	Prefer features that are visible in the TUI or compiled package
+Maintenance cost	15	Favor small, testable CLI/TUI changes over broad abstractions

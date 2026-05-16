@@ -77,6 +77,8 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   } else {
     locationLines.push(dim(` /${currentDir || "global"}`));
   }
+  const currentInboxPath = currentDir ? path.join(paths.inboxDir, currentDir) : paths.inboxDir;
+  locationLines.push(dim(`You are here: ${currentInboxPath}`));
 
   const locationCard = box(locationLines, cols - 1, {
     border: "single",
@@ -87,13 +89,13 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   lines.push(...dropShadow(locationCard, cols - 1));
 
   if (error) {
-    lines.push(` Error: ${error}`);
+    lines.push(` Status: ${error}`);
     lines.push("");
   }
 
   // Calculate list height based on remaining space
   // Header logo: ~2 lines
-  // Location card: 3 lines + 1 shadow = 4 lines
+  // Location card grows with path details; rendered height is measured below.
   // Logo spacing: 1 line
   // Footer: 2 lines
   // Total overhead: ~9 lines
@@ -130,6 +132,8 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
       
       let displayString = displayLabel;
       const isWorkspace = entry.isHtmlWorkspace === true;
+      const isAsset = entry.isAsset === true;
+      const isTableData = entry.isTableData === true;
       if (entry.isDirectory && !isWorkspace) {
         if (entry.name !== "..") {
           displayString = gradientTextMulti(displayLabel, stops) + "/";
@@ -138,6 +142,10 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
         }
       } else if (isWorkspace) {
         displayString = `${displayLabel} ${dim("[html]")}`;
+      } else if (isAsset) {
+        displayString = `${displayLabel} ${dim("[asset]")}`;
+      } else if (isTableData) {
+        displayString = `${displayLabel} ${dim("[table]")}`;
       }
 
       if (!entry.isDirectory && entry.prompt) {
@@ -154,6 +162,10 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
           }
         } else if (isWorkspace) {
           rawText = `  ${displayLabel} ${dim("[html]")}`;
+        } else if (isAsset) {
+          rawText = `  ${displayLabel} ${dim("[asset]")}`;
+        } else if (isTableData) {
+          rawText = `  ${displayLabel} ${dim("[table]")}`;
         } else {
           rawText = `  ${displayLabel}`;
         }
@@ -192,9 +204,9 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   } else if (searchMode) {
     lines.push(dim(` [/] Search: ${query || ""}  [Enter] Apply   [Esc] Cancel   [Ctrl+/] Help `));
   } else if (query.length > 0) {
-    lines.push(dim(` [/] Search: ${query}   [Esc] Clear   [Enter] Open   [c] Copy   [d] Delete   [Ctrl+/] Help `));
+    lines.push(dim(` [/] Search: ${query}   [Esc] Clear   [Enter] Open   [o] Browser   [c] Copy   [d] Delete   [Ctrl+/] Help `));
   } else {
-    lines.push(dim(" [/] Search   [n] New Folder   [r] Rename   [Enter] Open   [c] Copy   [d] Delete   [Ctrl+/] Help   [q] Quit "));
+    lines.push(dim(" [/] Search   [n] New Folder   [r] Rename   [Enter] Open   [o] Browser   [c] Copy   [d] Delete   [Ctrl+/] Help   [q] Quit "));
   }
 
   return lines;

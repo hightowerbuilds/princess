@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { getPaths } from "./paths.ts";
-import { recordPromptRevision, readLatestPromptRevision, listPromptRevisions } from "./revisions.ts";
+import { getPromptRevisionDir, recordPromptRevision, readLatestPromptRevision, listPromptRevisions } from "./revisions.ts";
 
 let passed = 0;
 let failed = 0;
@@ -57,6 +57,23 @@ try {
   const revisions = await listPromptRevisions(filePath, paths);
   assertEq(revisions.length, 1, "one revision is listed");
   assertEq(revisions[0].content, "old content\n", "revision listing preserves content");
+
+  section("listPromptRevisions deltas");
+
+  const deltaFile = path.join(paths.inboxDir, "team", "delta.md");
+  const deltaDir = getPromptRevisionDir(deltaFile, paths);
+  await mkdir(deltaDir, { recursive: true });
+  await writeFile(path.join(deltaDir, "2026-05-10T00-00-00-000Z.md"), "same\nsame\nkeep\n", "utf8");
+  await writeFile(path.join(deltaDir, "2026-05-10T00-00-01-000Z.md"), "same\nkeep\n", "utf8");
+  const deltaRevisions = await listPromptRevisions(deltaFile, paths);
+  assertEq(deltaRevisions[0].removed, 1, "delta counts removal of one duplicate line");
+  assertEq(deltaRevisions[0].added, 0, "delta does not invent additions for duplicate removals");
+
+  section("external revision paths");
+
+  const firstExternal = getPromptRevisionDir(path.join(tempRoot, "external-a", "foo.md"), paths);
+  const secondExternal = getPromptRevisionDir(path.join(tempRoot, "external-b", "foo.md"), paths);
+  assert(firstExternal !== secondExternal, "external revision dirs include full-path identity");
 } finally {
   delete process.env.PRINCESS_HOME;
   await rm(tempRoot, { recursive: true, force: true });

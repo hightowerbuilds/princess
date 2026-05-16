@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "format": "html",
+  "title": "Local HTML Fixture Brief",
+  "slug": "local-html-fixture-brief",
+  "createdAt": "2026-05-16T18:18:48.941Z",
+  "updatedAt": "2026-05-16T18:19:20.116Z",
+  "resources": [
+    {
+      "id": "sample-app",
+      "type": "source",
+      "path": "sources/sample-app.ts",
+      "originalPath": "/Users/lukehightower/Desktop/websites/princess/daily-growth/trial-fixtures/local-workspace-trial/sample-project/src/app.ts",
+      "mediaType": "application/octet-stream",
+      "trust": "trusted",
+      "addedAt": "2026-05-16T18:19:20.115Z"
+    }
+  ]
+}

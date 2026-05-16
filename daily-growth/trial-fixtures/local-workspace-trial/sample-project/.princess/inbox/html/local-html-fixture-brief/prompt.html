@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Local HTML Fixture Brief</title>
+</head>
+<body>
+  <main data-princess-prompt>
+    <section data-princess-role="instructions">
+      <h2>Instructions</h2>
+      <p>Review the local fixture app and write a concise implementation handoff for a future agent. Keep the advice scoped to this project-local Princess workspace.</p>
+    </section>
+<section data-princess-role="constraints">
+      <h2>Constraints</h2>
+      <p>Use only files inside this sample project. Do not write to the global Princess inbox. Preserve the existing summarizeFeature behavior.</p>
+    </section>
+
+    <section data-princess-role="output-format">
+      <h2>Output Format</h2>
+      <p>Return a short Markdown handoff with relevant files, recommended change, test plan, and risks.</p>
+    </section>
+
+    <section data-princess-role="resources">
+      <h2>Resources</h2>
+      <section data-princess-resource="source" data-princess-id="sample-app">
+        <h3>Source: sample-app.ts</h3>
+        <p data-princess-trust="trusted">trusted local source</p>
+        <pre data-princess-include="sample-app"></pre>
+      </section>
+      <!-- princess:resources -->
+    </section>
+  </main>
+</body>
+</html>

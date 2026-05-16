@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { getPaths } from "./paths.ts";
 
@@ -17,7 +18,9 @@ function safeTimestamp(date = new Date()): string {
 function getRevisionBaseDir(filePath: string, paths = getPaths()): string {
   const relativePath = path.relative(paths.inboxDir, filePath);
   if (!relativePath || relativePath.startsWith("..")) {
-    return path.join(paths.dataDir, "revisions", "external", path.basename(filePath));
+    const absolutePath = path.resolve(filePath);
+    const digest = createHash("sha256").update(absolutePath).digest("hex").slice(0, 12);
+    return path.join(paths.dataDir, "revisions", "external", `${path.basename(filePath)}-${digest}`);
   }
   return path.join(paths.dataDir, "revisions", relativePath);
 }
@@ -50,18 +53,24 @@ function calculateDeltas(oldText: string, newText: string) {
   const oldLines = oldText.split(/\r?\n/);
   const newLines = newText.split(/\r?\n/);
 
+  const countLines = (lines: string[]) => {
+    const counts = new Map<string, number>();
+    for (const line of lines) {
+      counts.set(line, (counts.get(line) ?? 0) + 1);
+    }
+    return counts;
+  };
+
+  const oldCounts = countLines(oldLines);
+  const newCounts = countLines(newLines);
   let added = 0;
   let removed = 0;
 
-  // Extremely simple line-based delta for summary
-  const oldSet = new Set(oldLines);
-  const newSet = new Set(newLines);
-
-  for (const line of newLines) {
-    if (!oldSet.has(line)) added++;
+  for (const [line, count] of newCounts) {
+    added += Math.max(0, count - (oldCounts.get(line) ?? 0));
   }
-  for (const line of oldLines) {
-    if (!newSet.has(line)) removed++;
+  for (const [line, count] of oldCounts) {
+    removed += Math.max(0, count - (newCounts.get(line) ?? 0));
   }
 
   return { added, removed };

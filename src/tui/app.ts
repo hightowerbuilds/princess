@@ -2,15 +2,18 @@ import { batch, createEffect, createRoot, onCleanup } from "solid-js";
 import path from "node:path";
 import { access, readdir, readFile, mkdir, unlink, rename, rmdir, stat } from "node:fs/promises";
 import type { KeyEvent } from "./input.ts";
-import type { TuiState } from "./state.ts";
+import type { InboxEntry, TuiState } from "./state.ts";
 import type { AppScreen } from "./state.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { getPaths } from "../paths.ts";
 import { parsePromptDocument, sanitizePromptTitle, type PromptSearchEntry } from "../prompts.ts";
 import { recordPromptRevision, readLatestPromptRevision, listPromptRevisions } from "../revisions.ts";
 import { atomicWriteFile, cleanupTempFiles } from "../storage.ts";
-
-const SAVE_DEBOUNCE_MS = 1200;
+import { openFileInDefaultBrowser } from "../browser.ts";
+import { EDITOR_BODY_OVERHEAD_ROWS, INBOX_KEY_LIST_OVERHEAD_ROWS, REVISIONS_LIST_OVERHEAD_ROWS, SAVE_DEBOUNCE_MS } from "./constants.ts";
+import { AGENT_LETTER_FILENAME } from "../default-prompts.ts";
+import { readHtmlPromptManifest, type HtmlPromptManifest, type HtmlPromptResource } from "../html-prompts.ts";
+import { isImageAssetFile, isTableDataFile, isVisibleInboxFile } from "../inbox-files.ts";
 
 interface EditorSaveAPI {
   save: (forceSnapshot: boolean) => Promise<void>;
@@ -19,6 +22,18 @@ interface EditorSaveAPI {
 }
 
 let editorSaveAPI: EditorSaveAPI | null = null;
+
+export function compareInboxEntriesForDisplay(currentSub: string, a: InboxEntry, b: InboxEntry): number {
+  if (currentSub === "") {
+    const aIsAgentLetter = a.name === AGENT_LETTER_FILENAME;
+    const bIsAgentLetter = b.name === AGENT_LETTER_FILENAME;
+    if (aIsAgentLetter && !bIsAgentLetter) return -1;
+    if (!aIsAgentLetter && bIsAgentLetter) return 1;
+  }
+  if (a.isDirectory && !b.isDirectory) return -1;
+  if (!a.isDirectory && b.isDirectory) return 1;
+  return a.name.localeCompare(b.name);
+}
 
 export function handleKey(key: KeyEvent, state: TuiState): void {
   if (!state.state.running) return;
@@ -171,14 +186,18 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub:
 
     const entriesList = await Promise.all(
       entries
-        .filter((e) => e.isDirectory() || e.name.endsWith(".md") || e.name.endsWith(".html"))
+        .filter((e) => e.isDirectory() || isVisibleInboxFile(e.name))
         .map(async (e) => {
           const itemPath = path.join(targetDir, e.name);
           const isDir = e.isDirectory();
+          const isAsset = !isDir && isImageAssetFile(e.name);
+          const isTableData = !isDir && isTableDataFile(e.name);
           const item = {
             name: e.name,
             path: itemPath,
             isDirectory: isDir,
+            isAsset,
+            isTableData,
           };
 
           if (isDir) {
@@ -189,6 +208,8 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub:
             return item;
           }
 
+          if (isAsset || isTableData) return item;
+
           try {
             const content = await readFile(item.path, "utf8");
             return { ...item, prompt: parsePromptDocument(content) };
@@ -198,17 +219,15 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub:
         }),
     );
 
-    entriesList.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
+    entriesList.sort((a, b) => compareInboxEntriesForDisplay(currentSub, a, b));
 
     if (currentSub !== "") {
       entriesList.unshift({
         name: "..",
         path: path.dirname(targetDir),
         isDirectory: true,
+        isAsset: false,
+        isTableData: false,
       });
     }
 
@@ -224,7 +243,129 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub:
   }
 }
 
-async function collectPromptSearchEntries(rootDir: string, relativeDir: string): Promise<PromptSearchEntry[]> {
+function isInsideDirectory(rootDir: string, candidate: string): boolean {
+  const relative = path.relative(rootDir, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'");
+}
+
+function htmlToPlainText(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function htmlWorkspaceMetadataText(manifest: HtmlPromptManifest, relativePath: string): string {
+  const category = path.dirname(relativePath);
+  const values = [
+    manifest.title,
+    manifest.slug,
+    category === "." ? "" : category,
+    manifest.createdAt,
+    manifest.updatedAt,
+    "html workspace",
+    ...manifest.resources.flatMap((resource) => [
+      resource.id,
+      resource.type,
+      resource.path,
+      resource.originalPath ?? "",
+      resource.mediaType ?? "",
+      resource.alt ?? "",
+      resource.trust ?? "",
+    ]),
+  ];
+  return values.filter(Boolean).join("\n");
+}
+
+function isTextLikeHtmlResource(resource: HtmlPromptResource): boolean {
+  if (resource.type === "table") return true;
+  if (resource.type !== "source") return false;
+  const mediaType = resource.mediaType ?? "";
+  return mediaType.startsWith("text/") || mediaType === "application/json" || mediaType === "application/xml";
+}
+
+async function readHtmlResourceSearchText(workspaceDir: string, resource: HtmlPromptResource): Promise<string> {
+  const metadata = [
+    resource.id,
+    resource.type,
+    resource.path,
+    resource.originalPath ?? "",
+    resource.mediaType ?? "",
+    resource.alt ?? "",
+    resource.trust ?? "",
+  ].filter(Boolean).join(" ");
+
+  if (!isTextLikeHtmlResource(resource)) return metadata;
+
+  const resourcePath = path.resolve(workspaceDir, resource.path);
+  if (!isInsideDirectory(workspaceDir, resourcePath)) return metadata;
+
+  try {
+    const resourceStat = await stat(resourcePath);
+    if (!resourceStat.isFile() || resourceStat.size > 512 * 1024) return metadata;
+    const content = await readFile(resourcePath, "utf8");
+    return `${metadata}\n${resource.type === "table" ? htmlToPlainText(content) : content}`;
+  } catch {
+    return metadata;
+  }
+}
+
+async function htmlWorkspaceSearchEntry(rootDir: string, workspaceDir: string, relativePath: string): Promise<PromptSearchEntry | null> {
+  if (!isInsideDirectory(rootDir, workspaceDir)) return null;
+
+  try {
+    const manifest = await readHtmlPromptManifest(workspaceDir);
+    const promptHtml = await readFile(path.join(workspaceDir, "prompt.html"), "utf8").catch(() => "");
+    const resourceTexts = await Promise.all(
+      manifest.resources.map((resource) => readHtmlResourceSearchText(workspaceDir, resource)),
+    );
+    const category = path.dirname(relativePath);
+    const body = [
+      promptHtml,
+      htmlToPlainText(promptHtml),
+      htmlWorkspaceMetadataText(manifest, relativePath),
+      ...resourceTexts,
+    ].filter(Boolean).join("\n\n");
+
+    return {
+      name: path.basename(relativePath),
+      path: workspaceDir,
+      relativePath,
+      isDirectory: true,
+      isHtmlWorkspace: true,
+      document: {
+        hasFrontmatter: false,
+        metadata: {
+          title: manifest.title,
+          category: category === "." ? "" : category,
+          createdAt: manifest.createdAt,
+          updatedAt: manifest.updatedAt,
+          format: "html",
+        },
+        body,
+        preview: htmlToPlainText(promptHtml) || manifest.title,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function collectPromptSearchEntries(rootDir: string, relativeDir: string): Promise<PromptSearchEntry[]> {
   const targetDir = path.join(rootDir, relativeDir);
   const entries = await readdir(targetDir, { withFileTypes: true });
   const results: PromptSearchEntry[] = [];
@@ -234,6 +375,12 @@ async function collectPromptSearchEntries(rootDir: string, relativeDir: string):
     const entryRelativePath = path.join(relativeDir, entry.name);
 
     if (entry.isDirectory()) {
+      const workspaceEntry = await htmlWorkspaceSearchEntry(rootDir, entryPath, entryRelativePath);
+      if (workspaceEntry) {
+        results.push(workspaceEntry);
+        continue;
+      }
+
       const children = await collectPromptSearchEntries(rootDir, entryRelativePath);
       results.push(...children);
       continue;
@@ -290,7 +437,7 @@ async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
   const files = state.inboxFilteredSearch() ?? state.state.inbox.files;
   const cursor = state.state.inbox.cursor;
   const offset = state.state.inbox.scrollOffset;
-  const listHeight = Math.max(state.state.terminal.rows - 14, 5);
+  const listHeight = Math.max(state.state.terminal.rows - INBOX_KEY_LIST_OVERHEAD_ROWS, 5);
   const isSearchMode = state.state.inbox.searchMode;
   const inputMode = state.state.inbox.inputMode;
   const deleteConfirm = state.state.inbox.deleteConfirm;
@@ -484,7 +631,14 @@ async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
     case "c": {
       if (files.length > 0 && !key.ctrl && !key.meta) {
         const selected = files[cursor];
-        if (!selected.isDirectory) {
+        if (selected.isAsset || selected.isTableData) {
+          try {
+            await copyToClipboard(selected.path);
+            state.setState("error", selected.isTableData ? "Copied table path to clipboard!" : "Copied asset path to clipboard!");
+          } catch (err: any) {
+            state.setState("error", err.message);
+          }
+        } else if (!selected.isDirectory) {
           try {
             const content = await readFile(selected.path, "utf8");
             await copyToClipboard(content);
@@ -494,6 +648,22 @@ async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
           }
         } else {
           state.setState("error", "Cannot copy a directory.");
+        }
+      }
+      return;
+    }
+    case "o": {
+      if (files.length > 0 && !key.ctrl && !key.meta) {
+        const selected = files[cursor];
+        if (selected?.isHtmlWorkspace) {
+          try {
+            const openedPath = await openFileInDefaultBrowser(path.join(selected.path, "prompt.html"));
+            state.setState("error", `Opened in browser: ${path.basename(openedPath)}`);
+          } catch (err: any) {
+            state.setState("error", err.message);
+          }
+        } else {
+          state.setState("error", "Browser open is available for HTML prompt workspaces.");
         }
       }
       return;
@@ -518,6 +688,8 @@ async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
       if (!selected) return;
       if (selected.isHtmlWorkspace) {
         await openEditorFile(state, path.join(selected.path, "prompt.html"), { readOnly: true });
+      } else if (selected.isAsset || selected.isTableData) {
+        state.setState("error", "Reference files are listed by name. Copy the path or import/attach them from the operating system.");
       } else if (selected.isDirectory) {
         if (selected.name === "..") {
           const current = state.state.inbox.directory;
@@ -579,6 +751,15 @@ async function handleEditorKey(key: KeyEvent, state: TuiState): Promise<void> {
     try {
       await copyToClipboard(state.state.editor.content);
       state.setState("error", "Copied to clipboard!");
+    } catch (err: any) {
+      state.setState("error", err.message);
+    }
+    return;
+  }
+  if (key.name === "o" && readOnly && !key.ctrl && !key.meta) {
+    try {
+      const openedPath = await openFileInDefaultBrowser(filepath);
+      state.setState("error", `Opened in browser: ${path.basename(openedPath)}`);
     } catch (err: any) {
       state.setState("error", err.message);
     }
@@ -661,25 +842,25 @@ function applyEditorEdit(state: TuiState, key: KeyEvent, options: { readOnly: bo
       break;
     }
     case "pagedown": {
-      const listHeight = Math.max(state.state.terminal.rows - 4, 5);
+      const listHeight = Math.max(state.state.terminal.rows - EDITOR_BODY_OVERHEAD_ROWS, 5);
       cLine = Math.min(cLine + listHeight, lines.length - 1);
       cCol = Math.min(cCol, (lines[cLine] || "").length);
       break;
     }
     case "pageup": {
-      const listHeight = Math.max(state.state.terminal.rows - 4, 5);
+      const listHeight = Math.max(state.state.terminal.rows - EDITOR_BODY_OVERHEAD_ROWS, 5);
       cLine = Math.max(cLine - listHeight, 0);
       cCol = Math.min(cCol, (lines[cLine] || "").length);
       break;
     }
     case "ctrl+d": {
-      const listHeight = Math.max(Math.floor((state.state.terminal.rows - 4) / 2), 1);
+      const listHeight = Math.max(Math.floor((state.state.terminal.rows - EDITOR_BODY_OVERHEAD_ROWS) / 2), 1);
       cLine = Math.min(cLine + listHeight, lines.length - 1);
       cCol = Math.min(cCol, (lines[cLine] || "").length);
       break;
     }
     case "ctrl+u": {
-      const listHeight = Math.max(Math.floor((state.state.terminal.rows - 4) / 2), 1);
+      const listHeight = Math.max(Math.floor((state.state.terminal.rows - EDITOR_BODY_OVERHEAD_ROWS) / 2), 1);
       cLine = Math.max(cLine - listHeight, 0);
       cCol = Math.min(cCol, (lines[cLine] || "").length);
       break;
@@ -775,7 +956,7 @@ async function handleRevisionsKey(key: KeyEvent, state: TuiState): Promise<void>
   const revisions = state.state.revisions.files;
   const cursor = state.state.revisions.cursor;
   const offset = state.state.revisions.scrollOffset;
-  const listHeight = Math.max(state.state.terminal.rows - 10, 5);
+  const listHeight = Math.max(state.state.terminal.rows - REVISIONS_LIST_OVERHEAD_ROWS, 5);
   const filepath = state.state.editor.file;
 
   switch (key.name) {

@@ -3,6 +3,7 @@ import { createMemo } from "solid-js";
 import { createBreathingPulse } from "./motion.ts";
 import { filterPromptSearchEntries, parsePromptDocument, type ParsedPromptDocument, type PromptSearchEntry } from "../prompts.ts";
 import type { PromptRevision } from "../revisions.ts";
+import { IDLE_PULSE_PERIOD_MS, LOGO_PULSE_PERIOD_MS } from "./constants.ts";
 
 export type AppScreen = "inbox" | "editor" | "diff" | "revisions" | "revision-preview" | "help";
 export type EditorSaveState = "clean" | "dirty" | "saving" | "error";
@@ -13,6 +14,8 @@ export interface InboxEntry {
   path: string;
   isDirectory: boolean;
   isHtmlWorkspace?: boolean;
+  isAsset?: boolean;
+  isTableData?: boolean;
   label?: string;
   prompt?: ParsedPromptDocument;
 }
@@ -120,8 +123,8 @@ export function createTuiState() {
     hardwareCursor: null,
   });
 
-  const idlePulse = createBreathingPulse({ period: 4000, min: 0.4, max: 1.0 });
-  const logoPulse = createBreathingPulse({ period: 8000, min: 0, max: 1.0 });
+  const idlePulse = createBreathingPulse({ period: IDLE_PULSE_PERIOD_MS, min: 0.4, max: 1.0 });
+  const logoPulse = createBreathingPulse({ period: LOGO_PULSE_PERIOD_MS, min: 0, max: 1.0 });
 
   const editorParsedPrompt = createMemo(() => parsePromptDocument(state.editor.content));
 
@@ -134,7 +137,8 @@ export function createTuiState() {
       name: entry.name,
       label: entry.relativePath,
       path: entry.path,
-      isDirectory: false,
+      isDirectory: entry.isDirectory === true,
+      isHtmlWorkspace: entry.isHtmlWorkspace,
       prompt: entry.document,
     }));
   });

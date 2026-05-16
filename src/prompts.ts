@@ -20,6 +20,8 @@ export interface PromptSearchEntry {
   path: string;
   relativePath: string;
   document: ParsedPromptDocument;
+  isDirectory?: boolean;
+  isHtmlWorkspace?: boolean;
 }
 
 function slugifyTitle(title: string): string {
@@ -27,8 +29,26 @@ function slugifyTitle(title: string): string {
   return sanitized || "untitled-prompt";
 }
 
+function formatFrontmatterValue(value: string): string {
+  if (/[\r\n]/.test(value) || value.trim() !== value) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+function parseFrontmatterValue(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === "string") return parsed;
+    } catch {}
+  }
+  return trimmed;
+}
+
 function formatFrontmatterLine(key: string, value: string): string {
-  return `${key}: ${value}`;
+  return `${key}: ${formatFrontmatterValue(value)}`;
 }
 
 function extractPreview(body: string): string {
@@ -54,6 +74,7 @@ export function buildPromptDocument(
   const updatedAt = options.updatedAt ?? createdAt;
   const status = options.status ?? "draft";
   const category = options.category?.trim();
+  const headingTitle = title.replace(/\r?\n/g, " ").trim() || title;
 
   const frontmatter = [
     "---",
@@ -64,7 +85,7 @@ export function buildPromptDocument(
     formatFrontmatterLine("updatedAt", updatedAt),
     "---",
     "",
-    `# ${title}`,
+    `# ${headingTitle}`,
     "",
   ].filter((line) => line !== null) as string[];
 
@@ -72,7 +93,8 @@ export function buildPromptDocument(
 }
 
 export function parsePromptDocument(content: string): ParsedPromptDocument {
-  const hasFrontmatter = content.startsWith("---\n") || content.startsWith("---\r\n");
+  const normalized = content.replace(/\r\n/g, "\n");
+  const hasFrontmatter = normalized.startsWith("---\n");
   if (!hasFrontmatter) {
     return {
       hasFrontmatter: false,
@@ -82,9 +104,7 @@ export function parsePromptDocument(content: string): ParsedPromptDocument {
     };
   }
 
-  const closing = content.indexOf("\n---\n", 4);
-  const closingWindows = content.indexOf("\r\n---\r\n", 5);
-  const endIdx = closingWindows >= 0 ? closingWindows : closing;
+  const endIdx = normalized.indexOf("\n---\n", 4);
   if (endIdx < 0) {
     return {
       hasFrontmatter: false,
@@ -94,8 +114,8 @@ export function parsePromptDocument(content: string): ParsedPromptDocument {
     };
   }
 
-  const frontmatterBlock = content.slice(content.indexOf("\n") + 1, endIdx);
-  const body = content.slice(endIdx + (closingWindows >= 0 ? 7 : 5));
+  const frontmatterBlock = normalized.slice(4, endIdx);
+  const body = normalized.slice(endIdx + 5);
   const metadata: Partial<PromptMetadata> & Record<string, string> = {};
 
   for (const rawLine of frontmatterBlock.split(/\r?\n/)) {
@@ -104,7 +124,7 @@ export function parsePromptDocument(content: string): ParsedPromptDocument {
     const colonIdx = line.indexOf(":");
     if (colonIdx < 0) continue;
     const key = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx + 1).trim();
+    const value = parseFrontmatterValue(line.slice(colonIdx + 1));
     if (!key) continue;
     metadata[key] = value;
   }

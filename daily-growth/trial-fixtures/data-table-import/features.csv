@@ -1,0 +1,7 @@
+Feature,User Value,Effort,Risk,Notes
+"HTML prompt workspace search",High,Medium,Low,"Find prompts by section text, source content, and asset metadata"
+"Asset attachment package",High,Medium,Medium,"Requires clear alt text and separate model attachments"
+"Markdown-to-HTML section import",Medium,High,Medium,"Would convert headings, bullets, and code blocks instead of escaped paragraphs"
+"Read-only TUI feedback",Medium,Low,Low,"Show a visible message when edits are blocked"
+"Shared assets folder",Medium,Low,Low,"Users can browse filenames and agents can copy files into place"
+"CSV/TSV table import",High,Medium,Low,"Must preserve quoted commas, <tags>, and & characters"

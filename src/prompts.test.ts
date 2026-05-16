@@ -52,6 +52,20 @@ assertEq(parsed.metadata.category, "team/prompts", "parser reads category");
 assertEq(parsed.metadata.status, "draft", "parser reads status");
 assert(parsed.preview === "# Hello, World!", "preview uses first body line");
 
+const crlf = parsePromptDocument(doc.replace(/\n/g, "\r\n"));
+assertEq(crlf.metadata.title, "Hello, World!", "parser reads CRLF frontmatter");
+assertEq(crlf.preview, "# Hello, World!", "parser reads CRLF body preview");
+
+const multilineTitle = "Deploy:\nPlan";
+const escapedDoc = buildPromptDocument(multilineTitle, {
+  createdAt: "2026-05-09T12:00:00.000Z",
+  updatedAt: "2026-05-09T12:00:00.000Z",
+});
+assert(escapedDoc.includes('title: "Deploy:\\nPlan"'), "frontmatter quotes titles with newlines");
+const parsedEscaped = parsePromptDocument(escapedDoc);
+assertEq(parsedEscaped.metadata.title, multilineTitle, "parser unquotes escaped frontmatter values");
+assert(escapedDoc.includes("# Deploy: Plan"), "heading normalizes multiline titles");
+
 const plain = parsePromptDocument("just text");
 assertEq(plain.hasFrontmatter, false, "plain text has no frontmatter");
 assertEq(plain.preview, "just text", "plain preview uses content");

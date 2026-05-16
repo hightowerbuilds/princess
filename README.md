@@ -96,12 +96,13 @@ princess html set-section frontend/landing-page-build output-format --from ./han
 princess html list frontend/landing-page-build
 princess html remove-resource frontend/landing-page-build pricing --delete-file
 princess html lint frontend/landing-page-build
+princess html open frontend/landing-page-build
 princess html compile frontend/landing-page-build --target html
 princess html compile frontend/landing-page-build --target markdown
 princess html compile frontend/landing-page-build --target json
 ```
 
-HTML prompts use `prompt.html` as the structured authoring surface and `manifest.json` as the local resource index. Compilation expands local text/table resources into `dist/compiled.html`, `dist/compiled.md`, or `dist/compiled.json`; image assets remain explicit attachments because model APIs generally require typed file inputs.
+HTML prompts use `prompt.html` as the structured authoring surface and `manifest.json` as the local resource index. `princess html open` launches `prompt.html` in your operating system's default browser. Compilation expands local text/table resources into `dist/compiled.html`, `dist/compiled.md`, or `dist/compiled.json`; image assets remain explicit attachments because model APIs generally require typed file inputs.
 
 List prompts:
 
@@ -127,6 +128,7 @@ From the inbox:
 - `PgUp` / `PgDn` scroll
 - `/` enters live search mode over prompt title, category, status, body, and path
 - `c` copies the selected prompt
+- `o` opens the selected HTML workspace in the default browser
 - `d` deletes the selected file or empty folder
 - `q`, `Esc`, or `Ctrl+C` quits
 
@@ -141,6 +143,7 @@ From the editor:
 - `Ctrl+S` saves a revision snapshot
 - `Ctrl+R` opens a diff against the latest saved revision
 - `Ctrl+C` copies the current prompt
+- `o` opens read-only HTML prompts in the default browser
 - `Esc` returns to the inbox
 
 Edits are debounced to disk, and saved versions are stored as plain-file revision history under the Princess data directory.
@@ -193,7 +196,7 @@ bunx tsc --noEmit
 
 Princess is still small and local-only.
 
-- There is no sync, search, tagging, or database.
+- There is no sync, tagging, or database.
 - The editor is intentionally minimal.
 - Clipboard support depends on platform tools such as `pbcopy`, `clip`, or `xclip`.
 - Deleting directories currently only works for empty folders.

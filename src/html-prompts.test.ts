@@ -82,6 +82,8 @@ try {
       assertEq(workspace.path, path.join(paths.inboxDir, "web", "landing-page-build"), "creates workspace under category");
       assert((await readFile(path.join(workspace.path, "prompt.html"), "utf8")).includes("data-princess-prompt"), "writes prompt.html");
       assert((await readFile(path.join(workspace.path, "manifest.json"), "utf8")).includes('"format": "html"'), "writes manifest");
+      const secondWorkspace = await createHtmlPromptWorkspace("Landing Page Build", { category: "web" });
+      assertEq(secondWorkspace.path, path.join(paths.inboxDir, "web", "landing-page-build-2"), "auto-suffixes colliding workspaces");
 
       section("addHtmlPromptSource");
 
@@ -123,6 +125,24 @@ try {
       const tableHtml = await readFile(path.join(workspace.path, table.path), "utf8");
       assert(tableHtml.includes("<table>"), "generates HTML table");
       assert(tableHtml.includes("<th>Plan</th>"), "generates table header");
+
+      const malformedCsvPath = path.join(fixtureDir, "malformed.csv");
+      await writeFile(malformedCsvPath, "feature,notes\n\"Search,Unclosed quote\n", "utf8");
+      let malformedTableThrew = false;
+      try {
+        await importHtmlPromptTable("web/landing-page-build", malformedCsvPath, {
+          name: "malformed",
+          trust: "untrusted",
+        });
+      } catch (error) {
+        malformedTableThrew =
+          error instanceof Error &&
+          error.message.includes("Failed to import table") &&
+          error.message.includes("unterminated quoted field");
+      }
+      assertEq(malformedTableThrew, true, "rejects malformed CSV before adding a table resource");
+      const resourcesAfterMalformed = await listHtmlPromptResources("web/landing-page-build");
+      assert(!resourcesAfterMalformed.some((resource) => resource.id === "malformed"), "malformed CSV does not update manifest");
 
       section("upsertHtmlPromptSection");
 
@@ -199,6 +219,16 @@ try {
       assert(roles.includes("constraints"), "list includes added constraints section");
       assert(roles.includes("output-format"), "list includes added output-format section");
       assert(roles.includes("resources"), "list includes resources section");
+
+      let invalidRoleThrew = false;
+      try {
+        await upsertHtmlPromptSection("sections-demo", "!!!", "This role should fail.");
+      } catch (error) {
+        invalidRoleThrew =
+          error instanceof Error &&
+          error.message.includes('Invalid section role "!!!"');
+      }
+      assertEq(invalidRoleThrew, true, "rejects section roles that do not contain letters or numbers");
 
       const constraintSection = await getHtmlPromptSection("sections-demo", "constraints");
       assert(constraintSection !== null, "getHtmlPromptSection returns the requested section");

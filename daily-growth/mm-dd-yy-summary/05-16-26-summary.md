@@ -64,6 +64,60 @@ Following Phase 1.5, the user and I walked through V1–V6:
 - **Agent contract updated.** `getAgentInstructions` now has a "1c. Editing HTML Prompt Sections" section documenting the full section vocabulary.
 - **Tests.** `src/html-prompts.test.ts` grew from 36 to 54 tests covering list/get/move (before/after/to)/remove/reserved-protection. Total: 528 across 9 suites, all green. `bunx tsc --noEmit` clean. Manual CLI smoke verified: create → set-section → list-sections → move-section → remove-section → resources-section-protected.
 
-## Tomorrow's Focus
-- **Manual TUI smoke test of Phase 1.5 + Phase 2 pass 1.** Walk through Phase 1.5 transitions, then create an HTML workspace via CLI and verify it opens read-only in the TUI inbox: `[html]` badge visible, `prompt.html` loads, mutations are blocked, Ctrl+C copies, escape returns cleanly.
-- **Outstanding Phase 2 items** — none gating user use. Possible follow-ups: making HTML workspaces searchable (`collectPromptSearchEntries` currently only finds `.md` files); a TUI status nag when the user tries to type/save in read-only mode (today it silently no-ops).
+## Later Same-Day Showcase and Stress Tests
+
+After Phase 2 pass 1, the work shifted from implementation to proving Princess through realistic agent and human workflows. The new roadmap is `daily-growth/roadmaps/2026-05-princess-showcase-and-stress-tests.md`.
+
+- **Roadmap transition.** The code quality and HTML prompt builder roadmap is now complete and archived under `daily-growth/roadmaps/old/`. The active roadmap is now the Princess showcase and stress-test plan.
+- **Default agent letter.** Added the root-level default prompt `A LETTER TO YOUR AGENT FROM PRINCESS`, with an all-uppercase title. It is seeded into the Princess root inbox, not examples, so new users see it immediately. The letter explains how agents should use Princess, including the HTML prompt builder workflow.
+- **Installed local Princess.** The local checkout remains linked through the installed `princess` command, so the active command uses this repository's current code.
+- **HTML prompt discoverability.** HTML workspace content is now indexed by TUI search, including `prompt.html`, manifest/resource metadata, readable source files, and imported table partials. HTML workspaces appear as one prompt result instead of exposing internal files.
+- **Showcase organization.** Created `showcase/html prompts/` with shared `assets/` and `tables/` folders. Image assets and CSV/TSV table files are listed by filename in the TUI/CLI without rendering their contents.
+- **TUI location cue.** The inbox home view now shows `You are here:` with the active Princess inbox path, and project-local workspaces show a `PROJECT LOCAL` cue.
+
+## Trials Completed
+
+- **Trial 2 — Markdown Prompt Daily Use.** Created five practical Markdown prompts, verified duplicate suffixing, TUI search, and clipboard copy.
+- **Trial 3 — HTML Landing Page Brief.** Built a structured HTML prompt package and verified section operations, compile targets, TUI `[html]` badge, and read-only `prompt.html` viewing.
+- **Trial 4 — Asset-Heavy Prompt Package.** Verified sources/assets, alt text, JSON attachments, and asset-folder browsing. Found a concurrent resource-write race for the backlog.
+- **Trial 5 — Data and Table Import.** Imported CSV and TSV tables, added the shared `tables/` folder, and made table files visible/searchable by name and content where appropriate.
+- **Trial 6 — Existing Project Handoff.** Used this repo as the real project and saved a future refactor handoff prompt into Princess.
+- **Trial 7 — Revision and Recovery Drill.** Verified TUI edits, forced snapshots, diff view, revision browser, and copying an old revision. Changed successful revision-copy messages from `Error:` to neutral `Status:`.
+- **Trial 8 — Local Workspace Trial.** Verified `princess init --local`, local `.princess/inbox` discovery from root and nested directories, local `AGENT.md`, local HTML compile, and TUI local/global cues.
+- **Trial 9 — Collision and Naming Trial.** Created the same Markdown and HTML titles three times each. Markdown files and HTML workspace folders suffix cleanly with `-2` and `-3`, and unique content stayed in the correct artifacts.
+- **Trial 10 — Broken Input and Lint Trial.** Ran bad commands for missing workspaces, invalid roles, protected `resources`, missing assets, malformed CSV, and invalid compile targets. Fixed the important gaps immediately.
+
+## Fixes From The Trials
+
+- `src/cli/index.ts` now formats top-level failures as one-line `error: ...` messages instead of Bun source-frame stack traces.
+- `src/html-prompts.ts` now rejects section roles that sanitize to nothing, so inputs like `!!!` cannot create accidental `untitled-prompt` sections.
+- Table import now rejects malformed CSV/TSV before writing partials or manifest resources.
+- Missing workspace and missing source-file failures now name the relevant path more clearly.
+- Added regression tests for CLI error formatting, invalid section roles, malformed table import, table-file listing, HTML workspace search, read-only/status rendering, and local workspace behavior.
+
+## Validation
+
+- `bunx tsc --noEmit` passed.
+- `bun run test` passed across all suites.
+- `git diff --check` passed.
+- Trial workspaces were linted with `princess html lint` where applicable.
+
+## Next Focus
+
+- Trial 1 remains intentionally skipped for a fresh user/agent onboarding run.
+- Triage the findings backlog into must-fix, should-fix, and nice-to-have.
+- Build a short demo script for the strongest three showcase flows.
+- Likely next product polish: `create-prompt --json`, sorted `princess list` output, friendlier missing-workspace suggestions, and clearer duplicate disambiguation in the TUI.
+
+## Browser and Simultaneity Roadmap Started
+
+- Created `daily-growth/roadmaps/2026-05-browser-and-simultaneity.md`.
+- Defined two pillars: `Connecting with the Browser` and `Simultaneity`.
+- Clarified that simultaneity means more than safe concurrent file writes: the ambitious target is one user coordinating up to ten agents contributing to one large HTML prompt package for enterprise migration, 3D production, robotics, or similarly complex projects.
+- Added an initial browser-open implementation: `princess html open <workspace-ref>` launches `prompt.html` in the operating system's default browser, and the TUI now exposes `o` for HTML workspaces/read-only HTML prompts.
+
+## End-of-Day Push Prep
+
+- Rechecked the active roadmap and daily summary after adding browser-open support and the expanded simultaneity framing.
+- Confirmed the working branch is `main` tracking `origin/main`.
+- Prepared the full current worktree for a single push to main, including roadmap files, trial fixtures, agent instructions, docs, TUI behavior, HTML prompt validation fixes, browser-open support, and regression tests.

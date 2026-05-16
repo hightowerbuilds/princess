@@ -9,8 +9,13 @@ export interface KeyEvent {
 export type KeyHandler = (key: KeyEvent) => void;
 
 export function startInputLoop(handler: KeyHandler): () => void {
+  let pending = Buffer.alloc(0) as Buffer<ArrayBufferLike>;
+
   const onData = (data: Buffer) => {
-    const events = parseKeyEvents(data);
+    const buffer = pending.length > 0 ? Buffer.concat([pending, data]) : data;
+    const parsed = parseKeyEventBuffer(buffer);
+    pending = parsed.pending;
+    const events = parsed.events;
     for (const event of events) {
       handler(event);
     }
@@ -20,7 +25,11 @@ export function startInputLoop(handler: KeyHandler): () => void {
   return () => process.stdin.off("data", onData);
 }
 
-function parseKeyEvents(data: Buffer): KeyEvent[] {
+export function parseKeyEvents(data: Buffer): KeyEvent[] {
+  return parseKeyEventBuffer(data).events;
+}
+
+function parseKeyEventBuffer(data: Buffer): { events: KeyEvent[]; pending: Buffer } {
   const events: KeyEvent[] = [];
   let offset = 0;
 
@@ -141,16 +150,47 @@ function parseKeyEvents(data: Buffer): KeyEvent[] {
     // Printable ASCII
     if (byte >= 0x21 && byte <= 0x7e) {
       const char = String.fromCharCode(byte);
-      events.push(key(char, data));
+      events.push(key(char, data.slice(offset, offset + 1)));
       offset += 1;
       continue;
     }
 
-    // UTF-8 multi-byte or unknown -- skip
+    const utf8Length = utf8SequenceLength(byte);
+    if (utf8Length > 1) {
+      if (offset + utf8Length > data.length) {
+        return { events, pending: data.slice(offset) };
+      }
+      const slice = data.slice(offset, offset + utf8Length);
+      if (isValidUtf8Sequence(slice)) {
+        events.push(key(slice.toString("utf8"), slice));
+        offset += utf8Length;
+        continue;
+      }
+    }
+
+    // Unknown byte -- skip
     offset += 1;
   }
 
-  return events;
+  return { events, pending: Buffer.alloc(0) };
+}
+
+function utf8SequenceLength(byte: number): number {
+  if (byte >= 0xc2 && byte <= 0xdf) return 2;
+  if (byte >= 0xe0 && byte <= 0xef) return 3;
+  if (byte >= 0xf0 && byte <= 0xf4) return 4;
+  return 0;
+}
+
+function isValidUtf8Sequence(bytes: Buffer): boolean {
+  for (let i = 1; i < bytes.length; i++) {
+    if ((bytes[i] & 0xc0) !== 0x80) return false;
+  }
+  return !bytes.toString("utf8").includes("\uFFFD");
+}
+
+function isShiftedKey(name: string): boolean {
+  return /^[A-Z]$/.test(name) || /[~!@#$%^&*()_+{}|:"<>?]/.test(name);
 }
 
 function key(name: string, raw: Buffer, ctrl = false): KeyEvent {
@@ -158,7 +198,7 @@ function key(name: string, raw: Buffer, ctrl = false): KeyEvent {
     name,
     ctrl,
     meta: false,
-    shift: /^[A-Z]$/.test(name),
+    shift: isShiftedKey(name),
     raw,
   };
 }

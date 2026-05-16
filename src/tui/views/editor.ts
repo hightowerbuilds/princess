@@ -91,7 +91,7 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
       }
 
       // Marker to find the cursor position in the laid-out chunks
-      const markedText = before + "\u200B" + after;
+      const markedText = before + "\u200B" + at + after;
       const p = prepare(markedText, { whiteSpace: "pre-wrap", wordBreak: "break-all" });
       chunks = materializeToStrings(p, layout(p, maxLen));
     }
@@ -163,7 +163,7 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
   finalLines.push(...bodyCardWithShadow);
   finalLines.push("");
   const footerHints = readOnly
-    ? ` [Esc] Inbox  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `
+    ? ` [Esc] Inbox  [o] Browser  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `
     : ` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `;
   finalLines.push(dim(footerHints));
 

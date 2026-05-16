@@ -128,9 +128,15 @@ function resourceIdFromName(name: string): string {
   return sanitizePromptTitle(base);
 }
 
+function slugifySectionRole(role: string): string {
+  return role.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
 function normalizeSectionRole(role: string): string {
-  const normalized = sanitizePromptTitle(role);
-  if (!normalized) throw new Error("section role is required.");
+  const normalized = slugifySectionRole(role);
+  if (!normalized) {
+    throw new Error(`Invalid section role "${role}". Use at least one letter or number.`);
+  }
   return normalized;
 }
 
@@ -228,10 +234,25 @@ export function resolveHtmlPromptWorkspace(workspaceRef: string, paths = getPath
 }
 
 export async function readHtmlPromptManifest(workspaceDir: string): Promise<HtmlPromptManifest> {
-  const content = await readFile(manifestPath(workspaceDir), "utf8");
-  const parsed = JSON.parse(content) as HtmlPromptManifest;
+  const targetPath = manifestPath(workspaceDir);
+  let content: string;
+  try {
+    content = await readFile(targetPath, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") {
+      throw new Error(`HTML prompt workspace manifest not found: ${targetPath}`);
+    }
+    throw error;
+  }
+
+  let parsed: HtmlPromptManifest;
+  try {
+    parsed = JSON.parse(content) as HtmlPromptManifest;
+  } catch {
+    throw new Error(`Invalid Princess HTML prompt manifest at ${targetPath}`);
+  }
   if (parsed.format !== "html" || parsed.version !== 1 || !Array.isArray(parsed.resources)) {
-    throw new Error(`Invalid Princess HTML prompt manifest at ${manifestPath(workspaceDir)}`);
+    throw new Error(`Invalid Princess HTML prompt manifest at ${targetPath}`);
   }
   return parsed;
 }
@@ -307,7 +328,12 @@ async function copyIntoWorkspace(
   id: string,
 ): Promise<string> {
   const absoluteSource = path.resolve(sourcePath);
-  const sourceStat = await stat(absoluteSource);
+  const sourceStat = await stat(absoluteSource).catch((error) => {
+    if ((error as { code?: string }).code === "ENOENT") {
+      throw new Error(`Source file not found: ${absoluteSource}`);
+    }
+    throw error;
+  });
   if (!sourceStat.isFile()) throw new Error(`Source is not a file: ${sourcePath}`);
 
   const ext = path.extname(absoluteSource);
@@ -324,17 +350,19 @@ export async function createHtmlPromptWorkspace(
   options: { category?: string } = {},
 ): Promise<HtmlPromptWorkspace> {
   const paths = getPaths();
-  const slug = sanitizePromptTitle(title);
+  const baseSlug = sanitizePromptTitle(title);
   const category = options.category?.trim() ? normalizeRelativeSubpath(options.category, "category") : "";
   const parentDir = path.join(paths.inboxDir, category);
-  const workspaceDir = path.join(parentDir, slug);
-  ensureInside(paths.inboxDir, workspaceDir);
 
-  const existing = await stat(workspaceDir).catch(() => null);
-  if (existing) {
-    const manifest = await readHtmlPromptManifest(workspaceDir);
-    return { path: workspaceDir, manifest };
+  let slug = baseSlug;
+  let workspaceDir = path.join(parentDir, slug);
+  let suffix = 2;
+  while (await stat(workspaceDir).then(() => true).catch(() => false)) {
+    slug = `${baseSlug}-${suffix}`;
+    workspaceDir = path.join(parentDir, slug);
+    suffix++;
   }
+  ensureInside(paths.inboxDir, workspaceDir);
 
   await mkdir(path.join(workspaceDir, "assets"), { recursive: true });
   await mkdir(path.join(workspaceDir, "sources"), { recursive: true });
@@ -430,6 +458,9 @@ function parseDelimitedRows(content: string, delimiter: "," | "\t"): string[][] 
     }
 
     if (char === '"') {
+      if (field.length > 0) {
+        throw new Error("Malformed table source: unexpected quote inside an unquoted field.");
+      }
       quoted = true;
     } else if (char === delimiter) {
       row.push(field);
@@ -444,6 +475,10 @@ function parseDelimitedRows(content: string, delimiter: "," | "\t"): string[][] 
     }
   }
 
+  if (quoted) {
+    throw new Error("Malformed table source: unterminated quoted field.");
+  }
+
   row.push(field);
   if (row.some((cell) => cell.trim().length > 0)) rows.push(row);
   return rows.filter((cells) => cells.some((cell) => cell.trim().length > 0));
@@ -452,6 +487,14 @@ function parseDelimitedRows(content: string, delimiter: "," | "\t"): string[][] 
 function rowsToHtmlTable(rows: string[][]): string {
   if (rows.length === 0) throw new Error("Table source is empty.");
   const [headers, ...body] = rows;
+  if (headers.length === 0) throw new Error("Table source must include at least one column.");
+  body.forEach((row, index) => {
+    if (row.length !== headers.length) {
+      throw new Error(
+        `Malformed table source: row ${index + 2} has ${row.length} cells; expected ${headers.length}.`,
+      );
+    }
+  });
   const headerHtml = headers.map((cell) => `<th>${escapeHtml(cell.trim())}</th>`).join("");
   const bodyHtml = body
     .map((row) => `    <tr>${row.map((cell) => `<td>${escapeHtml(cell.trim())}</td>`).join("")}</tr>`)
@@ -476,9 +519,21 @@ export async function importHtmlPromptTable(
   const workspace = await readWorkspace(workspaceRef);
   const requestedId = options.name?.trim() || resourceIdFromName(tablePath);
   const id = uniqueResourceId(workspace.manifest, requestedId);
-  const content = await readFile(path.resolve(tablePath), "utf8");
+  const absoluteTablePath = path.resolve(tablePath);
+  const content = await readFile(absoluteTablePath, "utf8").catch((error) => {
+    if ((error as { code?: string }).code === "ENOENT") {
+      throw new Error(`Table source file not found: ${absoluteTablePath}`);
+    }
+    throw error;
+  });
   const delimiter = path.extname(tablePath).toLowerCase() === ".tsv" ? "\t" : ",";
-  const tableHtml = rowsToHtmlTable(parseDelimitedRows(content, delimiter));
+  let tableHtml: string;
+  try {
+    tableHtml = rowsToHtmlTable(parseDelimitedRows(content, delimiter));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to import table "${absoluteTablePath}": ${message}`);
+  }
 
   const targetDir = path.join(workspace.path, "partials");
   await mkdir(targetDir, { recursive: true });

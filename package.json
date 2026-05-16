@@ -16,10 +16,12 @@
     "test:revisions": "bun run src/revisions.test.ts",
     "test:storage": "bun run src/storage.test.ts",
     "test:views": "bun run src/tui/views.test.ts",
+    "test:app": "bun run src/tui/app.test.ts",
+    "test:input": "bun run src/tui/input.test.ts",
     "test:typeset": "bun run src/tui/typeset.test.ts",
     "test:motion": "bun --conditions=browser run src/tui/motion.test.ts",
     "test:aesthetics": "bun run src/tui/aesthetics.test.ts",
-    "test": "bun run test:cli && bun run test:prompts && bun run test:html-prompts && bun run test:storage && bun run test:revisions && bun run test:views && bun run test:typeset && bun run test:motion && bun run test:aesthetics"
+    "test": "bun run src/test-runner.ts"
   },
   "dependencies": {
     "solid-js": "^1.9.12"

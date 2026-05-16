@@ -45,6 +45,7 @@ section("renderInbox");
   ]);
 
   const lines = renderInbox(state, 80, 24);
+  assert(lines.some((line) => line.includes("You are here:")), "shows active inbox filesystem path");
   assert(lines.some((line) => line.includes("inbox-prompt.md")), "shows filename");
   assert(lines.some((line) => line.includes("ready")), "shows status metadata");
   assert(lines.some((line) => line.includes("team/prompts")), "shows category metadata");
@@ -78,6 +79,55 @@ section("renderInbox search");
   const lines = renderInbox(state, 80, 24);
   assert(lines.some((line) => line.includes("Search: draft")), "shows search query in footer");
   assert(lines.some((line) => line.includes("team/notes/team-note.md")), "shows search result path label");
+}
+
+section("renderInbox status message");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("error", "Revision copied to clipboard.");
+
+  const lines = renderInbox(state, 80, 24);
+  assert(lines.some((line) => line.includes("Status: Revision copied to clipboard.")), "shows neutral status label for notices");
+}
+
+section("renderInbox image assets");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("inbox", "files",[
+    {
+      name: "wireframe.svg",
+      path: "/tmp/wireframe.svg",
+      isDirectory: false,
+      isAsset: true,
+    },
+  ]);
+
+  const lines = renderInbox(state, 80, 24);
+  assert(lines.some((line) => line.includes("wireframe.svg")), "shows image asset filename");
+  assert(lines.some((line) => line.includes("[asset]")), "marks image assets without rendering them");
+}
+
+section("renderInbox table data files");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("inbox", "files",[
+    {
+      name: "features.csv",
+      path: "/tmp/features.csv",
+      isDirectory: false,
+      isTableData: true,
+    },
+  ]);
+
+  const lines = renderInbox(state, 80, 24);
+  assert(lines.some((line) => line.includes("features.csv")), "shows table data filename");
+  assert(lines.some((line) => line.includes("[table]")), "marks table data without rendering it");
 }
 
 section("renderInbox empty state");
@@ -134,6 +184,20 @@ section("renderEditor");
   assert(lines.some((line) => line.includes("[saved]")), "shows saved state");
 }
 
+section("renderEditor read-only HTML");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "file","/tmp/prompt.html");
+  state.setState("editor", "content","<!doctype html>\n");
+  state.setState("editor", "readOnly",true);
+
+  const { lines } = renderEditor(state, 80, 24);
+  assert(lines.some((line) => line.includes("[read-only]")), "shows read-only indicator");
+  assert(lines.some((line) => line.includes("[o] Browser")), "shows browser-open shortcut");
+}
+
 section("renderEditor dirty state");
 
 {
@@ -145,6 +209,20 @@ section("renderEditor dirty state");
   const { lines } = renderEditor(state, 80, 24);
   assert(lines.some((line) => line.includes("[dirty]")), "shows dirty indicator");
   }
+
+section("renderEditor preserves cursor character");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "file","/tmp/html-prompt.html");
+  state.setState("editor", "content","<!doctype html>\n");
+  state.setState("editor", "cursorLine",0);
+  state.setState("editor", "cursorCol",0);
+
+  const { lines } = renderEditor(state, 80, 24);
+  assert(lines.some((line) => line.includes("<!doctype html>")), "shows the character under the cursor");
+}
 
 section("renderDiff");
 
@@ -219,6 +297,7 @@ section("renderHelp");
 
   const lines = renderHelp(state, 80, 24);
   assert(lines.some((line) => line.includes("Help & Status")), "shows help title");
+  assert(lines.some((line) => line.includes("default browser")), "documents browser-open shortcut");
   assert(lines.some((line) => line.includes("Inbox")), "shows inbox storage path");
   assert(lines.some((line) => line.includes("Mode")), "shows current mode");
   assert(lines.some((line) => line.includes("team/prompts")), "shows current directory");

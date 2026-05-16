@@ -7,6 +7,7 @@ import { renderDiff } from "./views/diff.ts";
 import { renderRevisions } from "./views/revisions.ts";
 import { renderRevisionPreview } from "./views/revision-preview.ts";
 import { renderHelp } from "./views/help.ts";
+import { FRAME_BUDGET_MS } from "./constants.ts";
 
 export function createRenderer(state: TuiState): void {
   let pendingFrame: string | null = null;
@@ -31,7 +32,7 @@ export function createRenderer(state: TuiState): void {
     pendingFrame = frame;
     if (!scheduled) {
       scheduled = true;
-      setTimeout(flush, 16);
+      setTimeout(flush, FRAME_BUDGET_MS);
     }
   }
 

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Princess TUI Wireframe</title>
+  <desc id="desc">A simplified wireframe of a prompt inbox with sidebar folders, a prompt list, and a read-only HTML detail panel.</desc>
+  <rect width="960" height="540" fill="#f7f7f4"/>
+  <rect x="36" y="34" width="888" height="472" rx="12" fill="#ffffff" stroke="#222222" stroke-width="3"/>
+  <rect x="62" y="72" width="210" height="396" fill="#efede7" stroke="#777777" stroke-width="2"/>
+  <text x="86" y="110" font-family="Arial, sans-serif" font-size="22" fill="#222222">Inbox</text>
+  <rect x="86" y="140" width="160" height="28" fill="#d9f99d" stroke="#3f6212"/>
+  <text x="96" y="160" font-family="Arial, sans-serif" font-size="14" fill="#222222">A letter...</text>
+  <rect x="86" y="180" width="160" height="28" fill="#ffffff" stroke="#999999"/>
+  <text x="96" y="200" font-family="Arial, sans-serif" font-size="14" fill="#222222">showcase/</text>
+  <rect x="302" y="72" width="300" height="396" fill="#f8fafc" stroke="#777777" stroke-width="2"/>
+  <text x="326" y="110" font-family="Arial, sans-serif" font-size="22" fill="#222222">Prompts</text>
+  <rect x="326" y="140" width="250" height="46" fill="#dbeafe" stroke="#1d4ed8"/>
+  <text x="340" y="168" font-family="Arial, sans-serif" font-size="15" fill="#222222">landing-page-build-brief [html]</text>
+  <rect x="326" y="202" width="250" height="46" fill="#ffffff" stroke="#999999"/>
+  <text x="340" y="230" font-family="Arial, sans-serif" font-size="15" fill="#222222">release-notes-drafting</text>
+  <rect x="632" y="72" width="260" height="396" fill="#ffffff" stroke="#777777" stroke-width="2"/>
+  <text x="656" y="110" font-family="Arial, sans-serif" font-size="22" fill="#222222">Detail</text>
+  <rect x="656" y="136" width="112" height="30" fill="#fee2e2" stroke="#991b1b"/>
+  <text x="668" y="156" font-family="Arial, sans-serif" font-size="14" fill="#222222">read-only</text>
+  <line x1="656" y1="190" x2="864" y2="190" stroke="#999999" stroke-width="2"/>
+  <line x1="656" y1="224" x2="850" y2="224" stroke="#999999" stroke-width="2"/>
+  <line x1="656" y1="258" x2="870" y2="258" stroke="#999999" stroke-width="2"/>
+  <rect x="656" y="398" width="92" height="36" fill="#ecfccb" stroke="#3f6212"/>
+  <text x="680" y="421" font-family="Arial, sans-serif" font-size="15" fill="#222222">Copy</text>
+</svg>

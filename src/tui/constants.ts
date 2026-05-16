@@ -1,0 +1,9 @@
+export const SAVE_DEBOUNCE_MS = 1200;
+export const FRAME_BUDGET_MS = 16;
+
+export const IDLE_PULSE_PERIOD_MS = 4000;
+export const LOGO_PULSE_PERIOD_MS = 8000;
+
+export const INBOX_KEY_LIST_OVERHEAD_ROWS = 14;
+export const EDITOR_BODY_OVERHEAD_ROWS = 4;
+export const REVISIONS_LIST_OVERHEAD_ROWS = 10;

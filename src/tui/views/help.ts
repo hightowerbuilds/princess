@@ -27,6 +27,7 @@ export function renderHelp(state: TuiState, cols: number, rows: number): string[
 
   lines.push(yellow(" Inbox"));
   lines.push(statusLine(" [/] ", "Search prompts by title, metadata, path, or body"));
+  lines.push(statusLine(" [o]", "Open an HTML workspace in the default browser"));
   lines.push(statusLine(" [c]", "Copy a prompt file"));
   lines.push(statusLine(" [d]", "Delete a prompt file"));
   lines.push(statusLine(" [q]", "Quit from the inbox"));
@@ -37,6 +38,7 @@ export function renderHelp(state: TuiState, cols: number, rows: number): string[
   lines.push(statusLine(" [Ctrl+R]", "Open the latest diff"));
   lines.push(statusLine(" [Ctrl+P]", "Browse and restore revisions"));
   lines.push(statusLine(" [Ctrl+C]", "Copy the current buffer"));
+  lines.push(statusLine(" [o]", "Open read-only HTML in the default browser"));
   lines.push("");
 
   lines.push(green(" Revisions"));

@@ -4,6 +4,10 @@ import { mkdir, writeFile, readdir, stat, rename, rmdir, readFile } from "node:f
 import { runTui } from "../tui/tui.ts";
 import { getPaths } from "../paths.ts";
 import { buildPromptDocument, sanitizePromptTitle } from "../prompts.ts";
+import { atomicWriteFile } from "../storage.ts";
+import { AGENT_LETTER_CONTENT, AGENT_LETTER_FILENAME, AGENT_LETTER_TITLE } from "../default-prompts.ts";
+import { isImageAssetFile, isTableDataFile } from "../inbox-files.ts";
+import { openFileInDefaultBrowser } from "../browser.ts";
 import {
   addHtmlPromptAsset,
   addHtmlPromptSource,
@@ -15,8 +19,10 @@ import {
   listHtmlPromptResources,
   listHtmlPromptSections,
   moveHtmlPromptSection,
+  readHtmlPromptManifest,
   removeHtmlPromptResource,
   removeHtmlPromptSection,
+  resolveHtmlPromptWorkspace,
   upsertHtmlPromptSection,
   type HtmlPromptSectionMode,
   type HtmlPromptCompileTarget,
@@ -73,8 +79,9 @@ princess html move-section "optional/subfolder/title-of-the-prompt" constraints 
 princess html move-section "optional/subfolder/title-of-the-prompt" constraints --after output-format
 princess html move-section "optional/subfolder/title-of-the-prompt" constraints --to 0
 princess html remove-section "optional/subfolder/title-of-the-prompt" constraints
+princess html open "optional/subfolder/title-of-the-prompt"
 \`\`\`
-\`set-section\` is upsert — it adds the section if missing, replaces if present. The auto-managed \`resources\` section cannot be moved or removed. The TUI displays \`prompt.html\` in a read-only viewer; all authoring goes through these CLI commands.
+\`set-section\` is upsert — it adds the section if missing, replaces if present. The auto-managed \`resources\` section cannot be moved or removed. \`html open\` launches \`prompt.html\` in the operating system's default browser. The TUI displays \`prompt.html\` in a read-only viewer; all authoring goes through these CLI commands.
 
 ### 2. Viewing the Inbox
 To see what prompts currently exist in the user's inbox, run:
@@ -155,6 +162,7 @@ export async function bootstrap(isLocal: boolean = false) {
     await mkdir(paths.inboxDir, { recursive: true });
     await mkdir(paths.configDir, { recursive: true });
     await writeFile(paths.agentFile, getAgentInstructions(paths.inboxDir), { flag: "w" });
+    await seedExamples(paths.inboxDir);
     console.log(`Initialized Princess at ${paths.dataDir}`);
     console.log(`Agent instructions created at ${paths.agentFile}`);
   } catch (err: any) {
@@ -175,6 +183,16 @@ async function ensureInbox(subpath: string = "") {
   return targetDir;
 }
 
+async function availablePromptPath(targetDir: string, slug: string, extension: string): Promise<string> {
+  let candidate = path.join(targetDir, `${slug}${extension}`);
+  let suffix = 2;
+  while (await stat(candidate).then(() => true).catch(() => false)) {
+    candidate = path.join(targetDir, `${slug}-${suffix}${extension}`);
+    suffix++;
+  }
+  return candidate;
+}
+
 export async function createPrompt(title: string, category: string = "", format: "markdown" | "html" = "markdown") {
   if (format === "html") {
     try {
@@ -189,8 +207,8 @@ export async function createPrompt(title: string, category: string = "", format:
 
   const targetDir = await ensureInbox(category);
   
-  const filename = `${sanitizePromptTitle(title)}.md`;
-  const filepath = path.join(targetDir, filename);
+  const slug = sanitizePromptTitle(title);
+  const filepath = await availablePromptPath(targetDir, slug, ".md");
 
   const initialContent = buildPromptDocument(title, { category, status: "draft" });
 
@@ -233,6 +251,10 @@ export async function listPrompts(category: string = "", json: boolean = false) 
         console.log(`- 📁 ${entry.name}/`);
       } else if (entry.name.endsWith(".md") || entry.name.endsWith(".html")) {
         console.log(`- 📄 ${entry.name}`);
+      } else if (isImageAssetFile(entry.name)) {
+        console.log(`- 🖼️ ${entry.name}`);
+      } else if (isTableDataFile(entry.name)) {
+        console.log(`- 📊 ${entry.name}`);
       }
     }
     console.log(`\nInbox: ${paths.inboxDir}`);
@@ -245,6 +267,10 @@ export async function seedExamples(inboxDir: string) {
   const examplesDir = path.join(inboxDir, "examples");
   await mkdir(examplesDir, { recursive: true });
 
+  const agentLetterPath = path.join(inboxDir, AGENT_LETTER_FILENAME);
+  const agentLetter = buildPromptDocument(AGENT_LETTER_TITLE, { status: "ready" }) + AGENT_LETTER_CONTENT;
+  await writeFile(agentLetterPath, agentLetter, { flag: "wx" }).catch(() => {});
+
   const examples = [
     {
       title: "Welcome to Princess",
@@ -253,7 +279,7 @@ export async function seedExamples(inboxDir: string) {
     {
       title: "How to use with AI Agents",
       content: "When you want an agent to save a prompt for you, just tell it:\n'Save this to my Princess inbox'.\n\nThe agent will use the `princess create-prompt` command and then write the file content. You can find the full protocol in the `AGENT.md` file in your config directory.",
-    }
+    },
   ];
 
   for (const ex of examples) {
@@ -270,18 +296,16 @@ export async function createClaudeMd() {
   const princessSection = `\n## Princess\n\nPrompts live in **Princess**. Run \`princess list\` to browse, \`princess create-prompt "<title>" [--category <folder>]\` to deposit.\n\nInbox: \`${paths.inboxDir}\`\n`;
 
   try {
-    const fs = await import("node:fs/promises");
-    const existing = await fs.readFile(claudeMdPath, "utf-8").catch(() => null);
+    const existing = await readFile(claudeMdPath, "utf-8").catch(() => null);
     if (existing) {
-      // Check if Princess section already exists
-      if (existing.includes("## Princess") || existing.includes("Princess")) {
+      if (/^##\s+Princess\s*$/m.test(existing)) {
         console.log(`CLAUDE.md already mentions Princess.`);
         return;
       }
-      await fs.writeFile(claudeMdPath, existing + princessSection);
+      await atomicWriteFile(claudeMdPath, existing + princessSection);
       console.log(`Appended Princess section to ${claudeMdPath}`);
     } else {
-      await fs.writeFile(claudeMdPath, `# Project Notes\n${princessSection}`);
+      await atomicWriteFile(claudeMdPath, `# Project Notes\n${princessSection}`);
       console.log(`Created ${claudeMdPath} with Princess section`);
     }
   } catch (err: any) {
@@ -327,6 +351,7 @@ function printUsage(): void {
   console.log(`      --before <role>              Place this section before another by role`);
   console.log(`      --after <role>               Place this section after another by role`);
   console.log(`      --to <index>                 Place this section at a numeric index`);
+  console.log(`  princess html open <workspace>   Open prompt.html in the default browser`);
   console.log(`  princess html compile <workspace>`);
   console.log(`      --target <html|markdown|json> Output dist/compiled.*`);
   console.log(`  princess html lint <workspace>   Validate local refs, unsafe tags, and assets`);
@@ -480,6 +505,13 @@ async function runHtmlCommand(positionals: string[], values: Record<string, unkn
       console.log(`Moved section "${file}"`);
       break;
     }
+    case "open": {
+      const workspaceDir = resolveHtmlPromptWorkspace(workspace);
+      await readHtmlPromptManifest(workspaceDir);
+      const openedPath = await openFileInDefaultBrowser(path.join(workspaceDir, "prompt.html"));
+      console.log(`Opened HTML prompt in browser: ${openedPath}`);
+      break;
+    }
     case "compile": {
       const target = typeof values.target === "string" ? values.target : "html";
       const compiled = await compileHtmlPromptWorkspace(workspace, {
@@ -617,7 +649,6 @@ export async function main() {
         console.log("You can also create a project-local inbox by running `princess init --local` in any project folder.");
         console.log("\nInitializing your global inbox and seeding some examples...");
         await bootstrap(false);
-        await seedExamples(paths.inboxDir);
         console.log("\nLaunching TUI in 3 seconds...");
         await new Promise(r => setTimeout(r, 3000));
       }
@@ -641,9 +672,16 @@ export async function main() {
   }
 }
 
+export function formatCliError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.trim() || "Unknown error";
+  }
+  return String(error).trim() || "Unknown error";
+}
+
 if (import.meta.main) {
   main().catch(err => {
-    console.error(err);
+    console.error(`error: ${formatCliError(err)}`);
     process.exit(1);
   });
 }
