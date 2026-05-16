@@ -3,7 +3,8 @@ import path from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { AGENT_LETTER_FILENAME } from "../default-prompts.ts";
 import { filterPromptSearchEntries } from "../prompts.ts";
-import { collectPromptSearchEntries, compareInboxEntriesForDisplay } from "./app.ts";
+import { collectPromptSearchEntries } from "./app.ts";
+import { compareInboxEntriesForDisplay } from "../inbox-files.ts";
 import type { InboxEntry } from "./state.ts";
 
 let passed = 0;

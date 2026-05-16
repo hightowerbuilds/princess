@@ -186,6 +186,46 @@ try {
     },
   );
 
+  section("createPrompt structured result");
+
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "create-prompt-json"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      const paths = getPaths();
+
+      const first = await createPrompt("Release Notes", "showcase");
+      assertEq(first.path, path.join(paths.inboxDir, "showcase", "release-notes.md"), "markdown result reports absolute path");
+      assertEq(first.ref, "showcase/release-notes", "markdown result reports inbox-relative ref without extension");
+      assertEq(first.title, "Release Notes", "markdown result echoes title");
+      assertEq(first.format, "markdown", "markdown result reports format");
+      assertEq(first.category, "showcase", "markdown result echoes category");
+      assertEq(first.collision, false, "first markdown create reports no collision");
+
+      const second = await createPrompt("Release Notes", "showcase");
+      assertEq(second.path, path.join(paths.inboxDir, "showcase", "release-notes-2.md"), "collision suffix lands at -2");
+      assertEq(second.ref, "showcase/release-notes-2", "ref carries the collision suffix");
+      assertEq(second.collision, true, "second markdown create reports a collision");
+
+      const root = await createPrompt("Loose Note");
+      assertEq(root.ref, "loose-note", "ref omits empty category leading slash");
+      assertEq(root.category, "", "category defaults to empty string");
+
+      const html = await createPrompt("Landing Brief", "web", "html");
+      assertEq(html.path, path.join(paths.inboxDir, "web", "landing-brief"), "html result reports the workspace dir");
+      assertEq(html.ref, "web/landing-brief", "html ref points at the workspace dir without prompt.html");
+      assertEq(html.format, "html", "html result reports format");
+      assertEq(html.collision, false, "first html create reports no collision");
+
+      const htmlCollision = await createPrompt("Landing Brief", "web", "html");
+      assertEq(htmlCollision.ref, "web/landing-brief-2", "html ref carries the collision suffix");
+      assertEq(htmlCollision.collision, true, "second html create reports a collision");
+    },
+  );
+
   section("seedExamples");
 
   await withEnv(
@@ -271,6 +311,105 @@ try {
       assert(logs.some((line) => line.includes("features.csv")), "listPrompts prints table data filenames");
       const missingCategory = path.join(paths.inboxDir, "missing");
       assert(!(await stat(missingCategory).catch(() => null)), "listPrompts does not create missing categories");
+    },
+  );
+
+  section("listPrompts stable ordering and JSON shape");
+
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "list-sorted-home"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      const paths = getPaths();
+      await mkdir(paths.inboxDir, { recursive: true });
+
+      await writeFile(path.join(paths.inboxDir, "zeta.md"), "z", "utf8");
+      await writeFile(path.join(paths.inboxDir, "alpha.md"), "a", "utf8");
+      await writeFile(path.join(paths.inboxDir, AGENT_LETTER_FILENAME), "letter", "utf8");
+      await writeFile(path.join(paths.inboxDir, ".DS_Store"), "hidden", "utf8");
+      await mkdir(path.join(paths.inboxDir, "showcase"), { recursive: true });
+
+      const workspaceDir = path.join(paths.inboxDir, "html-workspace");
+      await mkdir(workspaceDir, { recursive: true });
+      await writeFile(path.join(workspaceDir, "manifest.json"), "{}", "utf8");
+      await writeFile(path.join(workspaceDir, "prompt.html"), "<html></html>", "utf8");
+
+      const logs: string[] = [];
+      const original = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.map(String).join(" "));
+      };
+      try {
+        await listPrompts("", true);
+      } finally {
+        console.log = original;
+      }
+
+      const payload = JSON.parse(logs.join("\n"));
+      const names: string[] = payload.items.map((i: { name: string }) => i.name);
+
+      assertEq(
+        names,
+        [AGENT_LETTER_FILENAME, "html-workspace", "showcase", "alpha.md", "zeta.md"],
+        "JSON entries are sorted: agent letter first, then directories alphabetically, then files alphabetically",
+      );
+
+      assert(!names.includes(".DS_Store"), "hidden non-visible files are excluded from list --json");
+
+      const htmlWorkspace = payload.items.find((i: { name: string }) => i.name === "html-workspace");
+      assertEq(htmlWorkspace.isDirectory, true, "html workspace entry is marked as directory");
+      assertEq(htmlWorkspace.isHtmlWorkspace, true, "html workspace entry has isHtmlWorkspace flag");
+
+      const showcase = payload.items.find((i: { name: string }) => i.name === "showcase");
+      assertEq(showcase.isDirectory, true, "plain directory is marked as directory");
+      assertEq(showcase.isHtmlWorkspace, undefined, "plain directory has no isHtmlWorkspace flag");
+
+      const alpha = payload.items.find((i: { name: string }) => i.name === "alpha.md");
+      assertEq(alpha.isDirectory, false, "markdown file is not a directory");
+      assertEq(alpha.isAsset, undefined, "markdown file is not an asset");
+      assertEq(alpha.isTableData, undefined, "markdown file is not table data");
+    },
+  );
+
+  section("listPrompts sorted asset and table category");
+
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "list-asset-sort-home"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      const paths = getPaths();
+      const assetsDir = path.join(paths.inboxDir, "assets");
+      await mkdir(assetsDir, { recursive: true });
+      await writeFile(path.join(assetsDir, "zebra.png"), "z", "utf8");
+      await writeFile(path.join(assetsDir, "apple.svg"), "a", "utf8");
+      await writeFile(path.join(assetsDir, "scores.csv"), "x,y\n1,2\n", "utf8");
+
+      const logs: string[] = [];
+      const original = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.map(String).join(" "));
+      };
+      try {
+        await listPrompts("assets", true);
+      } finally {
+        console.log = original;
+      }
+
+      const payload = JSON.parse(logs.join("\n"));
+      const names: string[] = payload.items.map((i: { name: string }) => i.name);
+      assertEq(names, ["apple.svg", "scores.csv", "zebra.png"], "non-root category sorts files alphabetically");
+
+      const apple = payload.items.find((i: { name: string }) => i.name === "apple.svg");
+      assertEq(apple.isAsset, true, "image file is tagged isAsset");
+
+      const scores = payload.items.find((i: { name: string }) => i.name === "scores.csv");
+      assertEq(scores.isTableData, true, "CSV file is tagged isTableData");
     },
   );
 

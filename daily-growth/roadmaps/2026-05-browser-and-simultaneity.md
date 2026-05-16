@@ -411,8 +411,8 @@ Add findings here as this roadmap runs.
 
 - [ ] Decide the first browser bridge shape: capture JSON, bookmarklet, extension, or local page.
 - [x] Add `princess html open <workspace-ref>` for opening `prompt.html` in the default browser.
-- [ ] Add `create-prompt --json`.
-- [ ] Sort `princess list` output consistently.
+- [x] Add `create-prompt --json` (2026-05-16: returns `path`, `ref`, `title`, `format`, `category`, `collision`; failures now throw so the top-level `error: ...` handler exits non-zero).
+- [x] Sort `princess list` output consistently (2026-05-16: shares `compareInboxEntriesForDisplay` with the TUI — agent letter pinned at root, directories before files, alphabetical within; JSON entries enriched with `isDirectory`, `isHtmlWorkspace`, `isAsset`, `isTableData`; non-visible files like `.DS_Store` filtered from both surfaces).
 - [ ] Make missing workspace errors suggest `princess list`.
 - [ ] Protect concurrent HTML resource writes.
 - [ ] Decide lock/lease strategy for simultaneous writes.

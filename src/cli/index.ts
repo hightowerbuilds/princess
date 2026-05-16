@@ -6,7 +6,7 @@ import { getPaths } from "../paths.ts";
 import { buildPromptDocument, sanitizePromptTitle } from "../prompts.ts";
 import { atomicWriteFile } from "../storage.ts";
 import { AGENT_LETTER_CONTENT, AGENT_LETTER_FILENAME, AGENT_LETTER_TITLE } from "../default-prompts.ts";
-import { isImageAssetFile, isTableDataFile } from "../inbox-files.ts";
+import { compareInboxEntriesForDisplay, isImageAssetFile, isTableDataFile, isVisibleInboxFile } from "../inbox-files.ts";
 import { openFileInDefaultBrowser } from "../browser.ts";
 import {
   addHtmlPromptAsset,
@@ -193,74 +193,138 @@ async function availablePromptPath(targetDir: string, slug: string, extension: s
   return candidate;
 }
 
-export async function createPrompt(title: string, category: string = "", format: "markdown" | "html" = "markdown") {
+export interface CreatePromptResult {
+  path: string;
+  ref: string;
+  title: string;
+  format: "markdown" | "html";
+  category: string;
+  collision: boolean;
+}
+
+function inboxRef(absolutePath: string, inboxDir: string): string {
+  return path.relative(inboxDir, absolutePath).split(path.sep).join("/");
+}
+
+export async function createPrompt(
+  title: string,
+  category: string = "",
+  format: "markdown" | "html" = "markdown",
+): Promise<CreatePromptResult> {
+  const paths = getPaths();
+  const trimmedCategory = category.trim();
+  const baseSlug = sanitizePromptTitle(title);
+
   if (format === "html") {
-    try {
-      const workspace = await createHtmlPromptWorkspace(title, { category });
-      console.log(`Created HTML prompt workspace: ${workspace.path}`);
-      console.log(`Edit prompt: ${path.join(workspace.path, "prompt.html")}`);
-    } catch (err: any) {
-      console.error(`Failed to create HTML prompt workspace: ${err.message}`);
-    }
-    return;
+    const workspace = await createHtmlPromptWorkspace(title, { category });
+    const ref = inboxRef(workspace.path, paths.inboxDir);
+    return {
+      path: workspace.path,
+      ref,
+      title,
+      format: "html",
+      category: trimmedCategory,
+      collision: workspace.manifest.slug !== baseSlug,
+    };
   }
 
   const targetDir = await ensureInbox(category);
-  
-  const slug = sanitizePromptTitle(title);
-  const filepath = await availablePromptPath(targetDir, slug, ".md");
-
+  const filepath = await availablePromptPath(targetDir, baseSlug, ".md");
   const initialContent = buildPromptDocument(title, { category, status: "draft" });
 
-  try {
-    await writeFile(filepath, initialContent, { flag: "wx" });
-    console.log(`Created prompt: ${filepath}`);
-  } catch (err: any) {
-    if (err.code === "EEXIST") {
-      console.log(`Prompt already exists: ${filepath}`);
-    } else {
-      console.error(`Failed to create prompt: ${err.message}`);
-    }
+  await writeFile(filepath, initialContent, { flag: "wx" });
+
+  const ref = inboxRef(filepath, paths.inboxDir).replace(/\.md$/, "");
+  return {
+    path: filepath,
+    ref,
+    title,
+    format: "markdown",
+    category: trimmedCategory,
+    collision: path.basename(filepath, ".md") !== baseSlug,
+  };
+}
+
+export interface ListedInboxEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  isHtmlWorkspace?: boolean;
+  isAsset?: boolean;
+  isTableData?: boolean;
+}
+
+async function loadListedEntries(targetDir: string, category: string): Promise<ListedInboxEntry[]> {
+  const dirents = await readdir(targetDir, { withFileTypes: true });
+  const visible = dirents.filter((e) => e.isDirectory() || isVisibleInboxFile(e.name));
+
+  const entries = await Promise.all(
+    visible.map(async (e): Promise<ListedInboxEntry> => {
+      const itemPath = path.join(targetDir, e.name);
+      if (e.isDirectory()) {
+        const isWorkspace = await stat(path.join(itemPath, "manifest.json"))
+          .then(() => true)
+          .catch(() => false);
+        return isWorkspace
+          ? { name: e.name, path: itemPath, isDirectory: true, isHtmlWorkspace: true }
+          : { name: e.name, path: itemPath, isDirectory: true };
+      }
+      return {
+        name: e.name,
+        path: itemPath,
+        isDirectory: false,
+        isAsset: isImageAssetFile(e.name) || undefined,
+        isTableData: isTableDataFile(e.name) || undefined,
+      };
+    }),
+  );
+
+  entries.sort((a, b) => compareInboxEntriesForDisplay(category, a, b));
+  return entries;
+}
+
+function formatListedEntry(entry: ListedInboxEntry): string {
+  if (entry.isDirectory) {
+    return entry.isHtmlWorkspace
+      ? `- 📦 ${entry.name}/ [html]`
+      : `- 📁 ${entry.name}/`;
   }
+  if (entry.isAsset) return `- 🖼️ ${entry.name}`;
+  if (entry.isTableData) return `- 📊 ${entry.name}`;
+  return `- 📄 ${entry.name}`;
 }
 
 export async function listPrompts(category: string = "", json: boolean = false) {
   const paths = getPaths();
   const targetDir = path.join(paths.inboxDir, category);
+
+  let entries: ListedInboxEntry[];
   try {
-    const entries = await readdir(targetDir, { withFileTypes: true });
-
-    if (json) {
-      const items = entries.map(entry => ({
-        name: entry.name,
-        type: entry.isDirectory() ? "directory" : "file",
-        path: path.join(targetDir, entry.name),
-      }));
-      console.log(JSON.stringify({ inbox: paths.inboxDir, items }, null, 2));
-      return;
-    }
-
-    if (entries.length === 0) {
-      console.log(`Inbox${category ? ` (${category})` : ""} is empty.`);
-      return;
-    }
-
-    console.log(`Inbox Prompts${category ? ` in ${category}` : ""}:`);
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        console.log(`- 📁 ${entry.name}/`);
-      } else if (entry.name.endsWith(".md") || entry.name.endsWith(".html")) {
-        console.log(`- 📄 ${entry.name}`);
-      } else if (isImageAssetFile(entry.name)) {
-        console.log(`- 🖼️ ${entry.name}`);
-      } else if (isTableDataFile(entry.name)) {
-        console.log(`- 📊 ${entry.name}`);
-      }
-    }
-    console.log(`\nInbox: ${paths.inboxDir}`);
+    entries = await loadListedEntries(targetDir, category);
   } catch (err: any) {
+    if (json) {
+      console.log(JSON.stringify({ inbox: paths.inboxDir, items: [], error: err.message }, null, 2));
+      return;
+    }
     console.error(`Failed to list prompts: ${err.message}`);
+    return;
   }
+
+  if (json) {
+    console.log(JSON.stringify({ inbox: paths.inboxDir, items: entries }, null, 2));
+    return;
+  }
+
+  if (entries.length === 0) {
+    console.log(`Inbox${category ? ` (${category})` : ""} is empty.`);
+    return;
+  }
+
+  console.log(`Inbox Prompts${category ? ` in ${category}` : ""}:`);
+  for (const entry of entries) {
+    console.log(formatListedEntry(entry));
+  }
+  console.log(`\nInbox: ${paths.inboxDir}`);
 }
 
 export async function seedExamples(inboxDir: string) {
@@ -321,6 +385,7 @@ function printUsage(): void {
   console.log(`  princess create-prompt <title>   Create a new prompt in the inbox`);
   console.log(`      --category, -c <name>        (Optional) Put the prompt in a subfolder`);
   console.log(`      --format <markdown|html>     Create a Markdown file or HTML prompt workspace`);
+  console.log(`      --json                       Output the created prompt's path and metadata as JSON`);
   console.log(`  princess list                    List prompts in the inbox`);
   console.log(`      --category, -c <name>        (Optional) List a subfolder`);
   console.log(`      --json                       Output as JSON`);
@@ -623,11 +688,20 @@ export async function main() {
         await createClaudeMd();
       }
       break;
-    case "create-prompt":
+    case "create-prompt": {
       const title = positionals.slice(1).join(" ") || "Untitled Prompt";
       const format = values.format === "html" ? "html" : "markdown";
-      await createPrompt(title, category, format);
+      const result = await createPrompt(title, category, format);
+      if (values.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else if (result.format === "html") {
+        console.log(`Created HTML prompt workspace: ${result.path}`);
+        console.log(`Edit prompt: ${path.join(result.path, "prompt.html")}`);
+      } else {
+        console.log(`Created prompt: ${result.path}`);
+      }
       break;
+    }
     case "list":
       await listPrompts(category, values.json);
       break;

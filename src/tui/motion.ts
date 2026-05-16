@@ -250,6 +250,12 @@ export interface StaggerConfig {
   easing?: (t: number) => number;
   /** Duration of each item's fade-in in ms. Default: 150. */
   fadeDuration?: number;
+  /**
+   * Optional accessor whose value, when changed, restarts the reveal.
+   * Use this when the same item-count should re-animate on a context
+   * change (e.g., entering a different directory with the same length).
+   */
+  triggerKey?: Accessor<unknown>;
 }
 
 /**
@@ -284,6 +290,8 @@ export function createStaggeredReveal(
   const [now, setNow] = createSignal(0);
   let timer: ReturnType<typeof setInterval> | null = null;
   let lastCount = 0;
+  let lastKey: unknown = undefined;
+  let keyInitialized = false;
 
   function startAnimation() {
     if (timer !== null) clearInterval(timer);
@@ -298,11 +306,19 @@ export function createStaggeredReveal(
 
   createEffect(() => {
     const count = itemCount();
-    if (count !== lastCount && count > 0) {
+    const key = config?.triggerKey?.();
+    const countChanged = count !== lastCount;
+    const keyChanged = config?.triggerKey != null && keyInitialized && key !== lastKey;
+    if ((countChanged || keyChanged) && count > 0) {
       lastCount = count;
+      lastKey = key;
+      keyInitialized = true;
       setStartTime(Date.now());
       setNow(Date.now());
       startAnimation();
+    } else if (config?.triggerKey != null && !keyInitialized) {
+      lastKey = key;
+      keyInitialized = true;
     }
   });
 

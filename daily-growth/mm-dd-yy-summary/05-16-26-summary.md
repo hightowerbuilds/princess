@@ -121,3 +121,102 @@ After Phase 2 pass 1, the work shifted from implementation to proving Princess t
 - Rechecked the active roadmap and daily summary after adding browser-open support and the expanded simultaneity framing.
 - Confirmed the working branch is `main` tracking `origin/main`.
 - Prepared the full current worktree for a single push to main, including roadmap files, trial fixtures, agent instructions, docs, TUI behavior, HTML prompt validation fixes, browser-open support, and regression tests.
+
+## TUI Aesthetic Pass (same day, post-push)
+
+User asked for a focused effort on making the TUI feel more "energized" without being over-the-top. Initial audit found that `motion.ts` (16 primitives, 1335 lines) and `aesthetics.ts` (501 lines) were almost entirely unused — only `createBreathingPulse` (on the logo), `dropShadow`, and `gradientTextMulti` were wired in. So the work is **integration**, not new infrastructure.
+
+Roadmap agreed for the aesthetic pass:
+
+1. ~~Smooth cursor scroll~~ — deferred. Direct integration of `createSmoothScroll` creates a regression: when `j` at the bottom of the viewport bumps `scrollOffset` by 1, the cursor row falls off-screen for ~150ms during the spring transit. Highlight disappears. Will revisit with a `snap-on-small-delta` wrapper later.
+2. Cursor trail
+3. Staggered reveal on directory change
+4. Focus depth dimming
+5. Crossfade between screens
+6. Footer hint gentle glow
+
+### Pass #1 landed — Cursor trail in inbox list
+
+- `state.ts` exposes a new `inboxCursorTrail = createCursorTrail(() => state.inbox.cursor, { fadeFrames: 6, maxTrail: 2 })`. Trail fades over ~288ms (16ms × 3 × 6 frames).
+- `views/inbox.ts` adds a `trailMarker(opacity)` helper that renders a `›` in fading 256-color grayscale (shades 234–250). The non-cursor render branch now checks `state.inboxCursorTrail(i)`; rows with trail opacity > 0 get the gray `›` prefix instead of three spaces.
+- Visual effect: pressing `j`/`k` leaves a faint glowing trail of `›` markers on the two previous cursor positions, fading out over ~300ms. Gives kinetic feel without touching scroll, layout, or content.
+- `bunx tsc --noEmit` clean. Full test suite passes (all 81 in views.test.ts plus the rest).
+- No new tests added — visual effect doesn't have a clean substring assertion, and the existing inbox tests still pass without modification (the trail is invisible at construction time because no cursor moves have occurred).
+
+### Pass #2 landed — Staggered reveal on directory entry / first paint
+
+- `motion.ts`: `StaggerConfig` gains an optional `triggerKey?: Accessor<unknown>` so the reveal can re-fire when a key (e.g., current directory) changes even if the visible item count stays the same. Additive — existing `createStaggeredReveal` usage and its motion.test.ts case untouched. New `lastKey` / `keyInitialized` tracking inside the effect avoids a phantom first-paint fire when `triggerKey` is supplied but its initial value matches.
+- `state.ts` exposes `inboxReveal = createStaggeredReveal(() => state.inbox.files.length, { delay: 22, fadeDuration: 140, triggerKey: () => state.inbox.directory })`.
+- `views/inbox.ts` row loop now wraps its push: row line is built into a `lineToPush` local, then `revealOpacity = state.inboxReveal(i - offset)` controls what's actually pushed — `""` when opacity is 0 (item not yet visible, preserves layout slot via box content padding), `dim(line)` while fading in, plain line at opacity 1.
+- Visual effect: opening Princess (or entering a subdirectory) cascades the prompt rows in over ~250ms — first row at t=0, each subsequent row 22ms later, each fading in over 140ms. Subtle but conveys "fresh list arriving" rather than "list popping."
+- Race-condition aware: directory mutation in `app.ts` precedes the async `loadInboxFiles`. Reveal fires once on directory change (key) and again when files actually load (count) — the second fire wins visually, no visible jank.
+- `bunx tsc --noEmit` clean. All 81 view tests + full suite pass.
+
+### Pass #3 landed — Focus depth dimming around the cursor
+
+- `views/inbox.ts` imports `focusDimLine` from `aesthetics.ts` and applies it to fully-revealed rows: `focusDimLine(lineToPush, i, cursor, 8)`. Cursor row passes through unchanged (distance 0 → brightness 1.0 → function returns line as-is). Rows 1–7 away get progressively dimmer fg256 grayscale shades; distance ≥ 8 falls to `dim()`.
+- Stacks cleanly with pass #2 — focus dim is only applied when reveal opacity = 1, so the cascade-in path still uses the reveal's own dim, and we don't double-dim during the intro animation.
+- ANSI nesting note: explicit color escapes inside the line (trail markers, gradient text on directories, status chips) keep their own colors — outer `fg256` only paints the un-styled foreground spans. So the eye-anchoring effect targets neutral text without washing out the deliberate color highlights.
+- `bunx tsc --noEmit` clean; tests pass.
+
+### Pass #4 — Crossfade between screens — deferred
+
+- Tried wiring `createCrossfade` over `state.screen` and applying `dim()` to the full frame proportionally to inverse progress. Doesn't work cleanly: our existing color helpers (`dim`, `rgb`, `bgGray`, etc.) emit specific SGR-cancel codes (`\x1b[22m`, `\x1b[39m`, `\x1b[49m`) at the end of each span, which cancel an outer `dim()` wrap before it can paint the rest of the line. Result is patchy, not a fade.
+- A true compositing crossfade would require rendering both old and new screens to line buffers and blending — not a 30-line change. Punted to a future pass; the existing instant screen swap is fine for now.
+
+### Pass #5 landed — Footer hint gentle glow
+
+- `state.ts` adds `hintGlow = createGlowPulse({ period: 5200, baseColor: [88,88,88], glowColor: [185,185,185] })`. Slow, narrow grayscale band — fully present but easy to miss until you settle.
+- **Lifecycle fix:** initially called `hintGlow.start()` at construction in `state.ts`, which broke the test runner — pulses with running `setInterval` keep the bun process alive after tests finish, so `test-runner.ts` hung indefinitely. Moved the `.start()` call to `app.ts` alongside `idlePulse.start()` / `logoPulse.start()`, matching the existing dormant-at-construction convention. Tests are pulse-creation safe but not pulse-running.
+- `views/inbox.ts` adds a `footerWithHelpGlow(state, full)` helper that splits the footer string around the `[Ctrl+/] Help` token and re-composes it as `dim(before) + rgb(...glow, marker) + dim(after)` — so the marker glows in truecolor while the surrounding hints stay dim. Three footer branches (default, search-mode, residual-query) all use the helper.
+- Visual effect: every ~5s, the `[Ctrl+/] Help` token in the footer brightens from charcoal to soft gray and back. Almost subliminal; gives the screen a heartbeat without demanding attention.
+- `bunx tsc --noEmit` clean; full suite passes (81 view tests + the rest).
+
+### Summary of the aesthetic pass
+
+Three primitives wired in, one deferred, one (smooth scroll) deferred upstream. The "energized but restrained" feel comes from layering small motions:
+
+- Static idle: hint-glow heartbeat every ~5s, logo gradient pulse
+- Selection: cursor trail (300ms fade), focus-depth dim around cursor
+- Navigation: staggered reveal on directory change (250ms cascade)
+
+All five visible effects are signal-driven and auto-stop on convergence (or are bounded pulses), so the renderer wakes only when something's actually moving. No new dependencies; no new infrastructure. Every effect is using a primitive that already existed in `motion.ts` / `aesthetics.ts` — the work was integration, not invention.
+
+## Browser and Simultaneity Roadmap — Phase 1 Substrate (S1 + S2)
+
+Picked up the Browser and Simultaneity roadmap. Verified the roadmap's stated state against the code: only B3 (browser-open) had shipped; S1–S4 of the Phase 1 substrate were untouched. Started from the lowest-friction items.
+
+### S1 landed — `princess create-prompt --json`
+
+- `createPrompt` was rewritten to **return** a structured `CreatePromptResult` instead of `console.log`-ing and swallowing errors. Shape: `{ path, ref, title, format, category, collision }`.
+  - `ref` is inbox-relative with no extension for both formats (e.g., `showcase/release-notes-2` for Markdown, `web/landing-brief-2` for HTML) — matches what `princess html <subcommand> <ref>` already takes.
+  - `collision` is `true` whenever the slug ended up with a `-2`/`-3`/… suffix because of a name clash.
+- Failures now **throw**; the top-level `error: <msg>` handler exits 1. The previous behavior — catch, print to stderr, exit 0 — was a Trial-2 finding that made `--json` untrustworthy without this fix.
+- Dispatcher routes the result to either human output (unchanged) or pretty-printed JSON when `--json` is passed.
+- Usage text lists the new flag.
+- Tests: new `createPrompt structured result` section in `src/cli/index.test.ts` — 14 assertions covering markdown, collision suffix, root-category, HTML, and HTML-collision cases.
+
+### S2 landed — Sorted `princess list` output
+
+- The TUI's `compareInboxEntriesForDisplay` was moved out of `src/tui/app.ts` and into the shared `src/inbox-files.ts` (alongside the existing visibility predicates). The CLI and TUI now literally call the same comparator — no drift risk.
+- The comparator takes a minimal `{ name; isDirectory }` shape, so the CLI's `ListedInboxEntry` and the TUI's `InboxEntry` both qualify.
+- `listPrompts` was rebuilt: `loadListedEntries` filters dirents through `isVisibleInboxFile`, probes each directory for `manifest.json` to detect HTML workspaces (parallel `stat`), sorts with the shared comparator, and returns enriched entries.
+- JSON shape upgraded from `{ name, type, path }` to `{ name, path, isDirectory, isHtmlWorkspace?, isAsset?, isTableData? }` — mirrors the TUI's internal `InboxEntry` model so consumers can reason about the same vocabulary across both surfaces.
+- Non-visible files (`.DS_Store`, stray `.txt`, etc.) are now filtered from both human and JSON output, matching the TUI's visibility rule.
+- Human output adds a `📦 ... [html]` badge for HTML workspaces.
+- Removed the now-unused `AGENT_LETTER_FILENAME` import from `src/tui/app.ts`. Updated `src/tui/app.test.ts` to import the comparator from `../inbox-files.ts`.
+- Tests: two new sections in `src/cli/index.test.ts` cover root-level sort (agent letter pinned first, directories then files, alphabetical within), HTML workspace detection, hidden-file filtering, the per-file-type flags, and non-root category sort. CLI suite went from 56 → 68 assertions.
+
+### Verification
+
+- `bunx tsc --noEmit` clean.
+- `bun run test` — all 9 suites green.
+- Live smoke against a temp `PRINCESS_HOME` confirmed: S1 prints correct JSON for first-create, collision-suffix, and HTML cases (and unchanged human output otherwise); S2 sorts agent-letter-first, directories alphabetically before files, tags HTML workspaces in both surfaces, and filters `.DS_Store`.
+
+### Roadmap status after today
+
+- Phase 1 Substrate: 2 of 4 done (S1 ✅, S2 ✅, S3 resource write safety pending, S4 TUI external-change awareness pending).
+- Phase 2 Browser Bridge: B3 partial (browser-open from yesterday). B1/B2/B4 pending.
+- Phases 3–5 untouched.
+
+S3 (manifest write race fixed in Trial 4) is the natural next item — it's the highest-impact remaining Phase 1 work and unblocks any future multi-agent contribution flow.

@@ -11,9 +11,8 @@ import { recordPromptRevision, readLatestPromptRevision, listPromptRevisions } f
 import { atomicWriteFile, cleanupTempFiles } from "../storage.ts";
 import { openFileInDefaultBrowser } from "../browser.ts";
 import { EDITOR_BODY_OVERHEAD_ROWS, INBOX_KEY_LIST_OVERHEAD_ROWS, REVISIONS_LIST_OVERHEAD_ROWS, SAVE_DEBOUNCE_MS } from "./constants.ts";
-import { AGENT_LETTER_FILENAME } from "../default-prompts.ts";
 import { readHtmlPromptManifest, type HtmlPromptManifest, type HtmlPromptResource } from "../html-prompts.ts";
-import { isImageAssetFile, isTableDataFile, isVisibleInboxFile } from "../inbox-files.ts";
+import { compareInboxEntriesForDisplay, isImageAssetFile, isTableDataFile, isVisibleInboxFile } from "../inbox-files.ts";
 
 interface EditorSaveAPI {
   save: (forceSnapshot: boolean) => Promise<void>;
@@ -22,18 +21,6 @@ interface EditorSaveAPI {
 }
 
 let editorSaveAPI: EditorSaveAPI | null = null;
-
-export function compareInboxEntriesForDisplay(currentSub: string, a: InboxEntry, b: InboxEntry): number {
-  if (currentSub === "") {
-    const aIsAgentLetter = a.name === AGENT_LETTER_FILENAME;
-    const bIsAgentLetter = b.name === AGENT_LETTER_FILENAME;
-    if (aIsAgentLetter && !bIsAgentLetter) return -1;
-    if (!aIsAgentLetter && bIsAgentLetter) return 1;
-  }
-  if (a.isDirectory && !b.isDirectory) return -1;
-  if (!a.isDirectory && b.isDirectory) return 1;
-  return a.name.localeCompare(b.name);
-}
 
 export function handleKey(key: KeyEvent, state: TuiState): void {
   if (!state.state.running) return;
@@ -77,6 +64,7 @@ export async function runApp(state: TuiState): Promise<void> {
 
   state.idlePulse.start();
   state.logoPulse.start();
+  state.hintGlow.start();
 
   await new Promise<void>((resolve) => {
     createRoot((dispose) => {

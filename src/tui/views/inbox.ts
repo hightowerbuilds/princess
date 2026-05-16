@@ -1,12 +1,27 @@
 import type { TuiState } from "../state.ts";
-import { dim, bold, bgGray, white, black, bgPink, cyan, green, yellow } from "../colors.ts";
+import { dim, bold, bgGray, white, black, bgPink, cyan, green, yellow, fg256, rgb } from "../colors.ts";
 import path from "node:path";
 import { getPaths } from "../../paths.ts";
 import { truncateEnd } from "../typeset-compose.ts";
 import { box } from "../typeset-compose.ts";
 import { dropShadow } from "../aesthetics.ts";
 
-import { gradientTextMulti } from "../aesthetics.ts";
+import { gradientTextMulti, focusDimLine } from "../aesthetics.ts";
+
+function trailMarker(opacity: number): string {
+  const shade = 234 + Math.round(opacity * 16);
+  return fg256(shade, "›");
+}
+
+function footerWithHelpGlow(state: TuiState, full: string): string {
+  const marker = "[Ctrl+/] Help";
+  const idx = full.indexOf(marker);
+  if (idx < 0) return dim(full);
+  const before = full.slice(0, idx);
+  const after = full.slice(idx + marker.length);
+  const [r, g, b] = state.hintGlow.rgb();
+  return dim(before) + rgb(r, g, b, marker) + dim(after);
+}
 
 function getPulseStops(state: TuiState): Array<[number, [number, number, number]]> {
   const t = state.logoPulse.value();
@@ -152,6 +167,7 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
         displayString += renderPromptMeta(entry, cols - 4);
       }
 
+      let lineToPush: string;
       if (i === cursor) {
         let rawText = "";
         if (entry.isDirectory && !isWorkspace) {
@@ -172,9 +188,20 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
 
         const detail = !entry.isDirectory && entry.prompt ? renderPromptMeta(entry, cols - 8) : "";
         const padded = truncateEnd(` > ${rawText}${detail}`, Math.max(0, cols - 8));
-        inboxListLines.push(bgGray(white(` ${padded.padEnd(cols - 6)}`)));
+        lineToPush = bgGray(white(` ${padded.padEnd(cols - 6)}`));
       } else {
-        inboxListLines.push(`   ${truncateEnd(displayString, Math.max(0, cols - 8))}`);
+        const trailOpacity = state.inboxCursorTrail(i);
+        const prefix = trailOpacity > 0 ? ` ${trailMarker(trailOpacity)} ` : "   ";
+        lineToPush = `${prefix}${truncateEnd(displayString, Math.max(0, cols - 8))}`;
+      }
+
+      const revealOpacity = state.inboxReveal(i - offset);
+      if (revealOpacity === 0) {
+        inboxListLines.push("");
+      } else if (revealOpacity < 1) {
+        inboxListLines.push(dim(lineToPush));
+      } else {
+        inboxListLines.push(focusDimLine(lineToPush, i, cursor, 8));
       }
     }
   }
@@ -202,11 +229,11 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
     const label = inputMode === "create-folder" ? "[New Folder]" : "[Rename]";
     lines.push(dim(` ${label}: ${inputQuery || ""}  [Enter] Confirm   [Esc] Cancel `));
   } else if (searchMode) {
-    lines.push(dim(` [/] Search: ${query || ""}  [Enter] Apply   [Esc] Cancel   [Ctrl+/] Help `));
+    lines.push(footerWithHelpGlow(state, ` [/] Search: ${query || ""}  [Enter] Apply   [Esc] Cancel   [Ctrl+/] Help `));
   } else if (query.length > 0) {
-    lines.push(dim(` [/] Search: ${query}   [Esc] Clear   [Enter] Open   [o] Browser   [c] Copy   [d] Delete   [Ctrl+/] Help `));
+    lines.push(footerWithHelpGlow(state, ` [/] Search: ${query}   [Esc] Clear   [Enter] Open   [o] Browser   [c] Copy   [d] Delete   [Ctrl+/] Help `));
   } else {
-    lines.push(dim(" [/] Search   [n] New Folder   [r] Rename   [Enter] Open   [o] Browser   [c] Copy   [d] Delete   [Ctrl+/] Help   [q] Quit "));
+    lines.push(footerWithHelpGlow(state, " [/] Search   [n] New Folder   [r] Rename   [Enter] Open   [o] Browser   [c] Copy   [d] Delete   [Ctrl+/] Help   [q] Quit "));
   }
 
   return lines;

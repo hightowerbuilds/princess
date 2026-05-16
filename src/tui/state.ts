@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 import { createMemo } from "solid-js";
-import { createBreathingPulse } from "./motion.ts";
+import { createBreathingPulse, createCursorTrail, createStaggeredReveal, createGlowPulse } from "./motion.ts";
 import { filterPromptSearchEntries, parsePromptDocument, type ParsedPromptDocument, type PromptSearchEntry } from "../prompts.ts";
 import type { PromptRevision } from "../revisions.ts";
 import { IDLE_PULSE_PERIOD_MS, LOGO_PULSE_PERIOD_MS } from "./constants.ts";
@@ -126,6 +126,23 @@ export function createTuiState() {
   const idlePulse = createBreathingPulse({ period: IDLE_PULSE_PERIOD_MS, min: 0.4, max: 1.0 });
   const logoPulse = createBreathingPulse({ period: LOGO_PULSE_PERIOD_MS, min: 0, max: 1.0 });
 
+  const inboxCursorTrail = createCursorTrail(() => state.inbox.cursor, {
+    fadeFrames: 6,
+    maxTrail: 2,
+  });
+
+  const inboxReveal = createStaggeredReveal(() => state.inbox.files.length, {
+    delay: 22,
+    fadeDuration: 140,
+    triggerKey: () => state.inbox.directory,
+  });
+
+  const hintGlow = createGlowPulse({
+    period: 5200,
+    baseColor: [88, 88, 88],
+    glowColor: [185, 185, 185],
+  });
+
   const editorParsedPrompt = createMemo(() => parsePromptDocument(state.editor.content));
 
   const inboxFilteredSearch = createMemo<InboxEntry[] | null>(() => {
@@ -143,7 +160,7 @@ export function createTuiState() {
     }));
   });
 
-  return { state, setState, idlePulse, logoPulse, editorParsedPrompt, inboxFilteredSearch };
+  return { state, setState, idlePulse, logoPulse, inboxCursorTrail, inboxReveal, hintGlow, editorParsedPrompt, inboxFilteredSearch };
 }
 
 export type TuiState = ReturnType<typeof createTuiState>;
