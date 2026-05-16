@@ -129,30 +129,35 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
       const displayLabel = entry.label ?? entry.name;
       
       let displayString = displayLabel;
-      if (entry.isDirectory) {
+      const isWorkspace = entry.isHtmlWorkspace === true;
+      if (entry.isDirectory && !isWorkspace) {
         if (entry.name !== "..") {
           displayString = gradientTextMulti(displayLabel, stops) + "/";
         } else {
           displayString = displayLabel + "/";
         }
+      } else if (isWorkspace) {
+        displayString = `${displayLabel} ${dim("[html]")}`;
       }
 
       if (!entry.isDirectory && entry.prompt) {
-        displayString += renderPromptMeta(entry, cols - 4); 
+        displayString += renderPromptMeta(entry, cols - 4);
       }
 
       if (i === cursor) {
         let rawText = "";
-        if (entry.isDirectory) {
+        if (entry.isDirectory && !isWorkspace) {
           if (entry.name === "..") {
             rawText = `  ${entry.name} (Up)`;
           } else {
             rawText = `  ${gradientTextMulti(displayLabel, stops)}/`;
           }
+        } else if (isWorkspace) {
+          rawText = `  ${displayLabel} ${dim("[html]")}`;
         } else {
           rawText = `  ${displayLabel}`;
         }
-        
+
         const detail = !entry.isDirectory && entry.prompt ? renderPromptMeta(entry, cols - 8) : "";
         const padded = truncateEnd(` > ${rawText}${detail}`, Math.max(0, cols - 8));
         inboxListLines.push(bgGray(white(` ${padded.padEnd(cols - 6)}`)));

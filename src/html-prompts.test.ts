@@ -7,12 +7,16 @@ import {
   addHtmlPromptSource,
   compileHtmlPromptWorkspace,
   createHtmlPromptWorkspace,
+  getHtmlPromptSection,
   importHtmlPromptTable,
   listHtmlPromptResources,
+  listHtmlPromptSections,
   lintHtmlPromptWorkspace,
+  moveHtmlPromptSection,
   readHtmlPromptSource,
   readHtmlPromptManifest,
   removeHtmlPromptResource,
+  removeHtmlPromptSection,
   upsertHtmlPromptSection,
 } from "./html-prompts.ts";
 
@@ -180,6 +184,70 @@ try {
       await writeFile(path.join(workspace.path, "prompt.html"), "<script>alert('x')</script>", "utf8");
       const unsafeIssues = await lintHtmlPromptWorkspace("web/landing-page-build");
       assert(unsafeIssues.some((issue) => issue.code === "forbidden-tag"), "lint catches forbidden tags");
+
+      section("section operations");
+
+      const sectionsWs = await createHtmlPromptWorkspace("Sections Demo");
+      await upsertHtmlPromptSection("sections-demo", "context", "Background notes.");
+      await upsertHtmlPromptSection("sections-demo", "constraints", "Avoid frameworks.");
+      await upsertHtmlPromptSection("sections-demo", "output-format", "Plain text.");
+
+      const listed = await listHtmlPromptSections("sections-demo");
+      const roles = listed.map((s) => s.role);
+      assert(roles.includes("instructions"), "list includes default instructions section");
+      assert(roles.includes("context"), "list includes added context section");
+      assert(roles.includes("constraints"), "list includes added constraints section");
+      assert(roles.includes("output-format"), "list includes added output-format section");
+      assert(roles.includes("resources"), "list includes resources section");
+
+      const constraintSection = await getHtmlPromptSection("sections-demo", "constraints");
+      assert(constraintSection !== null, "getHtmlPromptSection returns the requested section");
+      assert(constraintSection!.html.includes("Avoid frameworks."), "section html contains the upserted body");
+      assertEq(constraintSection!.role, "constraints", "section role matches");
+
+      const missing = await getHtmlPromptSection("sections-demo", "nonexistent");
+      assertEq(missing, null, "getHtmlPromptSection returns null for unknown role");
+
+      const beforeMove = (await listHtmlPromptSections("sections-demo")).map((s) => s.role);
+      const constraintsIdx = beforeMove.indexOf("constraints");
+      const contextIdx = beforeMove.indexOf("context");
+      assert(contextIdx < constraintsIdx, "context originally precedes constraints");
+
+      await moveHtmlPromptSection("sections-demo", "constraints", { before: "context" });
+      const afterMoveBefore = (await listHtmlPromptSections("sections-demo")).map((s) => s.role);
+      assert(afterMoveBefore.indexOf("constraints") < afterMoveBefore.indexOf("context"), "move --before places source before reference");
+
+      await moveHtmlPromptSection("sections-demo", "constraints", { after: "output-format" });
+      const afterMoveAfter = (await listHtmlPromptSections("sections-demo")).map((s) => s.role);
+      assert(afterMoveAfter.indexOf("constraints") > afterMoveAfter.indexOf("output-format"), "move --after places source after reference");
+
+      await moveHtmlPromptSection("sections-demo", "constraints", { to: 0 });
+      const afterMoveTo = (await listHtmlPromptSections("sections-demo")).map((s) => s.role);
+      assertEq(afterMoveTo[0], "constraints", "move --to 0 places source at the beginning");
+
+      const sectionRemoved = await removeHtmlPromptSection("sections-demo", "context");
+      assertEq(sectionRemoved, true, "removeHtmlPromptSection returns true when removed");
+      const afterRemoveSections = (await listHtmlPromptSections("sections-demo")).map((s) => s.role);
+      assert(!afterRemoveSections.includes("context"), "removed section no longer listed");
+
+      const removeMissing = await removeHtmlPromptSection("sections-demo", "nonexistent");
+      assertEq(removeMissing, false, "removeHtmlPromptSection returns false for unknown role");
+
+      let reservedThrew = false;
+      try {
+        await removeHtmlPromptSection("sections-demo", "resources");
+      } catch {
+        reservedThrew = true;
+      }
+      assertEq(reservedThrew, true, "removeHtmlPromptSection refuses to delete the auto-managed resources section");
+
+      let moveReservedThrew = false;
+      try {
+        await moveHtmlPromptSection("sections-demo", "resources", { to: 0 });
+      } catch {
+        moveReservedThrew = true;
+      }
+      assertEq(moveReservedThrew, true, "moveHtmlPromptSection refuses to move the auto-managed resources section");
     },
   );
 } finally {

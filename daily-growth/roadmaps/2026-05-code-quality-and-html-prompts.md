@@ -191,6 +191,8 @@ The goal of Phase 2 is to let users (and agents) compose prompts in HTML, while 
 
 ### 2.2 Open questions to answer first
 
+**Status (2026-05-16):** V1, V4, V5 inherit substrate defaults from `src/html-prompts.ts` (directory workspace, multi-target compile, both formats coexist). V2, V3, V6 settled below. V-walkthrough complete.
+
 These should be settled with the user before any implementation begins. They are listed in the order they need to be decided.
 
 - **V1. What is the storage format?**
@@ -198,9 +200,11 @@ These should be settled with the user before any implementation begins. They are
 
 - **V2. Is the HTML rendered, or only authored?**
   Does the TUI render the HTML (visual approximation), show the raw HTML source, or both? If rendered, what subset of tags is supported, and how do we handle truly visual elements in a terminal?
+  → **Answered (2026-05-16):** Raw source only. The TUI opens `prompt.html` in a read-only viewer that shows the literal tags. No rendered approximation.
 
 - **V3. What is the surface for *building* the HTML?**
   Hand-edited markup, a structured form (e.g., "add a section, pick a type"), a templating DSL that expands to HTML, or a small set of component primitives?
+  → **Answered (2026-05-16):** CLI-only. Agents and humans build HTML prompts via `princess html …` commands. No TUI form, no in-TUI editing. Sections are addressed by `data-princess-role` (kept as "section" terminology, not "tag").
 
 - **V4. What is the surface for *consuming* the HTML?**
   When the user copies a prompt, should the clipboard receive HTML, plain text, Markdown, or model-ready JSON? Should `princess` know how to flatten the HTML into a single prompt string the way an LLM expects it?
@@ -210,6 +214,7 @@ These should be settled with the user before any implementation begins. They are
 
 - **V6. Are HTML prompts agent-writable on day one?**
   If yes, the `AGENT.md` contract needs an update; if no, the feature ships as a human-only authoring path first.
+  → **Answered (2026-05-16):** Yes. Agents get the full section vocabulary: add (via `set-section`, upsert), edit (same), reorder (`move-section --before/--after/--to`), delete (`remove-section`), list (`list-sections`), and read (`get-section`). The auto-managed `resources` section is protected from move/remove. `getAgentInstructions` updated to describe the section ops.
 
 ### 2.3 Candidate scope (subject to V1–V6)
 

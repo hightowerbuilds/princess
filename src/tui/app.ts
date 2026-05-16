@@ -1,6 +1,6 @@
 import { batch, createEffect, createRoot, onCleanup } from "solid-js";
 import path from "node:path";
-import { readdir, readFile, mkdir, unlink, rename, rmdir, stat } from "node:fs/promises";
+import { access, readdir, readFile, mkdir, unlink, rename, rmdir, stat } from "node:fs/promises";
 import type { KeyEvent } from "./input.ts";
 import type { TuiState } from "./state.ts";
 import type { AppScreen } from "./state.ts";
@@ -173,13 +173,19 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub:
       entries
         .filter((e) => e.isDirectory() || e.name.endsWith(".md") || e.name.endsWith(".html"))
         .map(async (e) => {
+          const itemPath = path.join(targetDir, e.name);
+          const isDir = e.isDirectory();
           const item = {
             name: e.name,
-            path: path.join(targetDir, e.name),
-            isDirectory: e.isDirectory(),
+            path: itemPath,
+            isDirectory: isDir,
           };
 
-          if (e.isDirectory()) {
+          if (isDir) {
+            const isWorkspace = await access(path.join(itemPath, "manifest.json")).then(() => true).catch(() => false);
+            if (isWorkspace) {
+              return { ...item, isHtmlWorkspace: true };
+            }
             return item;
           }
 
@@ -510,7 +516,9 @@ async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
       if (files.length === 0) return;
       const selected = files[cursor];
       if (!selected) return;
-      if (selected.isDirectory) {
+      if (selected.isHtmlWorkspace) {
+        await openEditorFile(state, path.join(selected.path, "prompt.html"), { readOnly: true });
+      } else if (selected.isDirectory) {
         if (selected.name === "..") {
           const current = state.state.inbox.directory;
           const parent = path.dirname(current);
@@ -534,7 +542,7 @@ async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
   }
 }
 
-async function openEditorFile(state: TuiState, filepath: string): Promise<void> {
+async function openEditorFile(state: TuiState, filepath: string, options: { readOnly?: boolean } = {}): Promise<void> {
   try {
     const content = await readFile(filepath, "utf8");
     batch(() => {
@@ -543,6 +551,7 @@ async function openEditorFile(state: TuiState, filepath: string): Promise<void> 
       state.setState("editor", "cursorLine", 0);
       state.setState("editor", "cursorCol", 0);
       state.setState("editor", "saveState", "clean");
+      state.setState("editor", "readOnly", options.readOnly === true);
       state.setState("screen", "editor");
     });
     editorSaveAPI?.resetBaseline();
@@ -556,28 +565,37 @@ async function openEditorFile(state: TuiState, filepath: string): Promise<void> 
 async function handleEditorKey(key: KeyEvent, state: TuiState): Promise<void> {
   const filepath = state.state.editor.file;
   if (!filepath || !editorSaveAPI) return;
+  const readOnly = state.state.editor.readOnly;
 
-  switch (key.name) {
-    case "escape": {
+  if (key.name === "escape") {
+    if (!readOnly) {
       editorSaveAPI.cancelPending();
       await editorSaveAPI.save(false);
-      state.setState("screen", "inbox");
-      return;
     }
+    state.setState("screen", "inbox");
+    return;
+  }
+  if (key.name === "ctrl+c") {
+    try {
+      await copyToClipboard(state.state.editor.content);
+      state.setState("error", "Copied to clipboard!");
+    } catch (err: any) {
+      state.setState("error", err.message);
+    }
+    return;
+  }
+
+  if (readOnly) {
+    applyEditorEdit(state, key, { readOnly: true });
+    return;
+  }
+
+  switch (key.name) {
     case "ctrl+s": {
       editorSaveAPI.cancelPending();
       state.setState("editor", "saveState", "saving");
       await editorSaveAPI.save(true);
       state.setState("error", "Saved.");
-      return;
-    }
-    case "ctrl+c": {
-      try {
-        await copyToClipboard(state.state.editor.content);
-        state.setState("error", "Copied to clipboard!");
-      } catch (err: any) {
-        state.setState("error", err.message);
-      }
       return;
     }
     case "ctrl+r": {
@@ -616,16 +634,16 @@ async function handleEditorKey(key: KeyEvent, state: TuiState): Promise<void> {
     }
   }
 
-  // Editing keys
-  applyEditorEdit(state, key);
+  applyEditorEdit(state, key, { readOnly: false });
 }
 
-function applyEditorEdit(state: TuiState, key: KeyEvent): void {
+function applyEditorEdit(state: TuiState, key: KeyEvent, options: { readOnly: boolean }): void {
   const content = state.state.editor.content;
   let lines = content.split('\n');
   let cLine = state.state.editor.cursorLine;
   let cCol = state.state.editor.cursorCol;
   let needsSave = false;
+  const readOnly = options.readOnly;
 
   switch (key.name) {
     case "up": {
@@ -685,6 +703,7 @@ function applyEditorEdit(state: TuiState, key: KeyEvent): void {
       break;
     }
     case "backspace": {
+      if (readOnly) break;
       if (cCol > 0) {
         const line = lines[cLine];
         lines[cLine] = line.slice(0, cCol - 1) + line.slice(cCol);
@@ -701,6 +720,7 @@ function applyEditorEdit(state: TuiState, key: KeyEvent): void {
       break;
     }
     case "enter": {
+      if (readOnly) break;
       const line = lines[cLine];
       const before = line.slice(0, cCol);
       const after = line.slice(cCol);
@@ -712,6 +732,7 @@ function applyEditorEdit(state: TuiState, key: KeyEvent): void {
       break;
     }
     default: {
+      if (readOnly) break;
       if (key.name.length === 1 && !key.ctrl && !key.meta) {
         const char = key.shift ? key.name.toUpperCase() : key.name;
         const line = lines[cLine] || "";
@@ -729,7 +750,9 @@ function applyEditorEdit(state: TuiState, key: KeyEvent): void {
   }
 
   batch(() => {
-    state.setState("editor", "content", lines.join('\n'));
+    if (!readOnly) {
+      state.setState("editor", "content", lines.join('\n'));
+    }
     state.setState("editor", "cursorLine", cLine);
     state.setState("editor", "cursorCol", cCol);
     if (needsSave) {

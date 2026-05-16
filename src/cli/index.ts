@@ -9,10 +9,14 @@ import {
   addHtmlPromptSource,
   compileHtmlPromptWorkspace,
   createHtmlPromptWorkspace,
+  getHtmlPromptSection,
   importHtmlPromptTable,
   lintHtmlPromptWorkspace,
   listHtmlPromptResources,
+  listHtmlPromptSections,
+  moveHtmlPromptSection,
   removeHtmlPromptResource,
+  removeHtmlPromptSection,
   upsertHtmlPromptSection,
   type HtmlPromptSectionMode,
   type HtmlPromptCompileTarget,
@@ -58,6 +62,19 @@ princess html lint "optional/subfolder/title-of-the-prompt"
 princess html compile "optional/subfolder/title-of-the-prompt" --target json
 \`\`\`
 The workspace contains \`prompt.html\`, \`manifest.json\`, \`assets/\`, \`sources/\`, \`partials/\`, and \`dist/\`. Edit \`prompt.html\` for the final task instructions. Local text and table resources are expanded during compile; image files are listed as attachments in \`dist/compiled.json\` and should be attached separately when the target model requires typed file inputs.
+
+### 1c. Editing HTML Prompt Sections
+HTML prompts are composed of \`<section data-princess-role="…">\` blocks. The CLI lets you list, read, add, replace, reorder, and delete sections without rewriting \`prompt.html\` by hand:
+\`\`\`bash
+princess html list-sections "optional/subfolder/title-of-the-prompt"
+princess html get-section "optional/subfolder/title-of-the-prompt" constraints
+princess html set-section "optional/subfolder/title-of-the-prompt" constraints --text "Updated constraint text."
+princess html move-section "optional/subfolder/title-of-the-prompt" constraints --before context
+princess html move-section "optional/subfolder/title-of-the-prompt" constraints --after output-format
+princess html move-section "optional/subfolder/title-of-the-prompt" constraints --to 0
+princess html remove-section "optional/subfolder/title-of-the-prompt" constraints
+\`\`\`
+\`set-section\` is upsert — it adds the section if missing, replaces if present. The auto-managed \`resources\` section cannot be moved or removed. The TUI displays \`prompt.html\` in a read-only viewer; all authoring goes through these CLI commands.
 
 ### 2. Viewing the Inbox
 To see what prompts currently exist in the user's inbox, run:
@@ -301,6 +318,15 @@ function printUsage(): void {
   console.log(`      --json                       Output resources as JSON`);
   console.log(`  princess html remove-resource <workspace> <id>`);
   console.log(`      --delete-file                Also delete the copied workspace file`);
+  console.log(`  princess html list-sections <workspace>`);
+  console.log(`      --json                       Output sections as JSON`);
+  console.log(`  princess html get-section <workspace> <role>`);
+  console.log(`      --json                       Output section as JSON`);
+  console.log(`  princess html remove-section <workspace> <role>`);
+  console.log(`  princess html move-section <workspace> <role>`);
+  console.log(`      --before <role>              Place this section before another by role`);
+  console.log(`      --after <role>               Place this section after another by role`);
+  console.log(`      --to <index>                 Place this section at a numeric index`);
   console.log(`  princess html compile <workspace>`);
   console.log(`      --target <html|markdown|json> Output dist/compiled.*`);
   console.log(`  princess html lint <workspace>   Validate local refs, unsafe tags, and assets`);
@@ -393,6 +419,67 @@ async function runHtmlCommand(positionals: string[], values: Record<string, unkn
       console.log(`Removed ${removed.type} "${removed.id}"`);
       break;
     }
+    case "list-sections": {
+      const sections = await listHtmlPromptSections(workspace);
+      if (values.json === true) {
+        console.log(JSON.stringify({ workspace, sections }, null, 2));
+        break;
+      }
+      if (sections.length === 0) {
+        console.log("No sections in prompt.html.");
+        break;
+      }
+      for (const section of sections) {
+        const heading = section.heading ? ` — ${section.heading}` : "";
+        console.log(`- ${section.role}${heading}`);
+      }
+      break;
+    }
+    case "get-section": {
+      if (!file) throw new Error("Usage: princess html get-section <workspace> <role>");
+      const section = await getHtmlPromptSection(workspace, file);
+      if (!section) {
+        console.log(`Section not found: ${file}`);
+        process.exit(1);
+      }
+      if (values.json === true) {
+        console.log(JSON.stringify(section, null, 2));
+      } else {
+        console.log(section.html);
+      }
+      break;
+    }
+    case "remove-section": {
+      if (!file) throw new Error("Usage: princess html remove-section <workspace> <role>");
+      const removed = await removeHtmlPromptSection(workspace, file);
+      if (!removed) {
+        console.log(`Section not found: ${file}`);
+        process.exit(1);
+      }
+      console.log(`Removed section "${file}"`);
+      break;
+    }
+    case "move-section": {
+      if (!file) throw new Error("Usage: princess html move-section <workspace> <role> --before|--after <role> | --to <index>");
+      const before = typeof values.before === "string" ? values.before : undefined;
+      const after = typeof values.after === "string" ? values.after : undefined;
+      const to = typeof values.to === "string" ? Number.parseInt(values.to, 10) : undefined;
+      const provided = [before, after, to].filter((v) => v !== undefined).length;
+      if (provided !== 1) {
+        throw new Error("Use exactly one of --before <role>, --after <role>, or --to <index>.");
+      }
+      let position: { before: string } | { after: string } | { to: number };
+      if (before !== undefined) position = { before };
+      else if (after !== undefined) position = { after };
+      else position = { to: to as number };
+      const moved = await moveHtmlPromptSection(workspace, file, position);
+      if (!moved) {
+        console.log(`Section not found: ${file}`);
+        process.exit(1);
+      }
+      console.log(`Moved section "${file}"`);
+      break;
+    }
     case "compile": {
       const target = typeof values.target === "string" ? values.target : "html";
       const compiled = await compileHtmlPromptWorkspace(workspace, {
@@ -473,6 +560,15 @@ export async function main() {
       },
       "claude-md": {
         type: "boolean",
+      },
+      before: {
+        type: "string",
+      },
+      after: {
+        type: "string",
+      },
+      to: {
+        type: "string",
       },
     },
   });

@@ -27,10 +27,13 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
     headerLines.push(`${status} ${category} ${updated}`.trim());
   }
   
-  const saveIndicator = saveState !== "clean" 
-    ? (saveState === "saving" ? "[saving]" : saveState === "dirty" ? "[dirty]" : "[save error]")
-    : "[saved]";
-  headerLines.push(dim(saveIndicator));
+  const readOnly = state.state.editor.readOnly;
+  const statusIndicator = readOnly
+    ? "[read-only]"
+    : saveState !== "clean"
+      ? (saveState === "saving" ? "[saving]" : saveState === "dirty" ? "[dirty]" : "[save error]")
+      : "[saved]";
+  headerLines.push(dim(statusIndicator));
 
   const headerCard = box(headerLines, cols - 1, {
     border: "single",
@@ -159,7 +162,10 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
   finalLines.push(...headerCardWithShadow);
   finalLines.push(...bodyCardWithShadow);
   finalLines.push("");
-  finalLines.push(dim(` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `));
+  const footerHints = readOnly
+    ? ` [Esc] Inbox  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `
+    : ` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `;
+  finalLines.push(dim(footerHints));
 
   return { lines: finalLines, cursor: hardwareCursor };
 }

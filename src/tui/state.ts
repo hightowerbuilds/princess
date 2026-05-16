@@ -12,6 +12,7 @@ export interface InboxEntry {
   name: string;
   path: string;
   isDirectory: boolean;
+  isHtmlWorkspace?: boolean;
   label?: string;
   prompt?: ParsedPromptDocument;
 }
@@ -40,6 +41,7 @@ export interface EditorState {
   cursorLine: number;
   cursorCol: number;
   saveState: EditorSaveState;
+  readOnly: boolean;
 }
 
 export interface DiffState {
@@ -100,6 +102,7 @@ export function createTuiState() {
       cursorLine: 0,
       cursorCol: 0,
       saveState: "clean",
+      readOnly: false,
     },
     diff: {
       oldContent: "",

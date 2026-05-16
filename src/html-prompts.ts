@@ -555,6 +555,164 @@ export async function listHtmlPromptResources(workspaceRef: string): Promise<Htm
   return [...workspace.manifest.resources];
 }
 
+export interface HtmlPromptSection {
+  role: string;
+  heading: string | null;
+  html: string;
+}
+
+const RESERVED_SECTION_ROLES = new Set(["resources"]);
+
+function findRoleSections(html: string): Array<{
+  role: string;
+  startIdx: number;
+  endIdx: number;
+}> {
+  const openRe = /<section\b[^>]*data-princess-role=["']([^"']+)["'][^>]*>/g;
+  const results: Array<{ role: string; startIdx: number; endIdx: number }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = openRe.exec(html)) !== null) {
+    const role = match[1];
+    const startIdx = match.index;
+    const afterOpen = openRe.lastIndex;
+
+    const tagRe = /<\/?section\b[^>]*>/g;
+    tagRe.lastIndex = afterOpen;
+    let depth = 1;
+    let inner: RegExpExecArray | null;
+    let endIdx = -1;
+
+    while ((inner = tagRe.exec(html)) !== null) {
+      if (inner[0].startsWith("</")) {
+        depth--;
+        if (depth === 0) {
+          endIdx = tagRe.lastIndex;
+          break;
+        }
+      } else {
+        depth++;
+      }
+    }
+
+    if (endIdx === -1) break;
+    results.push({ role, startIdx, endIdx });
+    openRe.lastIndex = endIdx;
+  }
+
+  return results;
+}
+
+function headingFromSectionHtml(sectionHtml: string): string | null {
+  const m = sectionHtml.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/);
+  if (!m) return null;
+  return m[1].replace(/<[^>]+>/g, "").trim() || null;
+}
+
+export async function listHtmlPromptSections(workspaceRef: string): Promise<HtmlPromptSection[]> {
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  const html = await readFile(promptPath(workspaceDir), "utf8");
+  return findRoleSections(html).map(({ role, startIdx, endIdx }) => {
+    const sectionHtml = html.slice(startIdx, endIdx);
+    return { role, heading: headingFromSectionHtml(sectionHtml), html: sectionHtml };
+  });
+}
+
+export async function getHtmlPromptSection(
+  workspaceRef: string,
+  role: string,
+): Promise<HtmlPromptSection | null> {
+  const normalizedRole = normalizeSectionRole(role);
+  const sections = await listHtmlPromptSections(workspaceRef);
+  return sections.find((s) => s.role === normalizedRole) ?? null;
+}
+
+export async function removeHtmlPromptSection(
+  workspaceRef: string,
+  role: string,
+): Promise<boolean> {
+  const normalizedRole = normalizeSectionRole(role);
+  if (RESERVED_SECTION_ROLES.has(normalizedRole)) {
+    throw new Error(`Section "${normalizedRole}" is auto-managed and cannot be removed.`);
+  }
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  const filePath = promptPath(workspaceDir);
+  const html = await readFile(filePath, "utf8");
+  const target = findRoleSections(html).find((s) => s.role === normalizedRole);
+  if (!target) return false;
+
+  let lead = target.startIdx;
+  while (lead > 0 && (html[lead - 1] === " " || html[lead - 1] === "\t")) lead--;
+  if (lead > 0 && html[lead - 1] === "\n") lead--;
+  let trail = target.endIdx;
+  while (trail < html.length && (html[trail] === " " || html[trail] === "\t")) trail++;
+  if (trail < html.length && html[trail] === "\n") trail++;
+
+  const next = html.slice(0, lead) + html.slice(trail);
+  await atomicWriteFile(filePath, next);
+  return true;
+}
+
+export type MoveSectionPosition =
+  | { before: string }
+  | { after: string }
+  | { to: number };
+
+export async function moveHtmlPromptSection(
+  workspaceRef: string,
+  role: string,
+  position: MoveSectionPosition,
+): Promise<boolean> {
+  const normalizedRole = normalizeSectionRole(role);
+  if (RESERVED_SECTION_ROLES.has(normalizedRole)) {
+    throw new Error(`Section "${normalizedRole}" is auto-managed and cannot be moved.`);
+  }
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  const filePath = promptPath(workspaceDir);
+  const html = await readFile(filePath, "utf8");
+  const sections = findRoleSections(html);
+  const sourceIdx = sections.findIndex((s) => s.role === normalizedRole);
+  if (sourceIdx === -1) return false;
+
+  let targetIdx: number;
+  if ("before" in position) {
+    const refRole = normalizeSectionRole(position.before);
+    const idx = sections.findIndex((s) => s.role === refRole);
+    if (idx === -1) throw new Error(`Reference section "${refRole}" not found.`);
+    targetIdx = idx;
+  } else if ("after" in position) {
+    const refRole = normalizeSectionRole(position.after);
+    const idx = sections.findIndex((s) => s.role === refRole);
+    if (idx === -1) throw new Error(`Reference section "${refRole}" not found.`);
+    targetIdx = idx + 1;
+  } else {
+    targetIdx = Math.max(0, Math.min(position.to, sections.length));
+  }
+
+  if (targetIdx === sourceIdx || targetIdx === sourceIdx + 1) return true;
+
+  const reordered = sections.map((s) => ({
+    role: s.role,
+    text: html.slice(s.startIdx, s.endIdx),
+  }));
+  const [moved] = reordered.splice(sourceIdx, 1);
+  const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
+  reordered.splice(adjustedTarget, 0, moved);
+
+  const firstStart = sections[0].startIdx;
+  const lastEnd = sections[sections.length - 1].endIdx;
+
+  const before = html.slice(0, firstStart);
+  const after = html.slice(lastEnd);
+  const indentMatch = before.match(/(^|\n)([ \t]+)$/);
+  const indent = indentMatch ? indentMatch[2] : "    ";
+
+  const joined = reordered.map((s) => s.text.trim()).join(`\n\n${indent}`);
+  const next = `${before}${joined}${after}`;
+  await atomicWriteFile(filePath, next);
+  return true;
+}
+
 export async function removeHtmlPromptResource(
   workspaceRef: string,
   resourceId: string,

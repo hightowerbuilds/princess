@@ -34,6 +34,36 @@ Continuing the Phase 1.5 imperative→reactive port from yesterday. P1 (store-if
 
 **Phase 1.5 complete in one day:** P1 (store-ified state) landed yesterday; P3 (reactive save loop), P4 (`createMemo` for derived data + restructured inbox search), and P2 (kill `activeKeyResolver`) all landed today. The imperative→reactive port is done modulo a manual TUI smoke test.
 
+## Phase 2 V-Walkthrough and First Pass
+
+Following Phase 1.5, the user and I walked through V1–V6:
+- **V1 storage:** Substrate-decided — directory-per-prompt workspace with `manifest.json` + `prompt.html` + attached resources.
+- **V2 render:** Raw source. TUI shows the literal tags, not a visual approximation.
+- **V3 authoring:** CLI-only. The TUI is a viewing surface; the CLI is the editing surface. Terminology stays "section" (HTML semantics) rather than "tag."
+- **V4 export:** Substrate-decided — `html | markdown | json` compile targets already implemented.
+- **V5 coexistence:** Substrate-decided — Markdown and HTML prompts live side by side.
+- **V6 agent-writable:** Yes on day one. Agents get add/edit/reorder/delete/list/read of sections.
+
+## Phase 2 Pass 1 (later same day)
+
+- **Four section operations added to `src/html-prompts.ts`:**
+  - `listHtmlPromptSections(workspaceRef)` — returns all top-level `<section data-princess-role>` blocks with role + heading + html.
+  - `getHtmlPromptSection(workspaceRef, role)` — returns a specific section or null.
+  - `removeHtmlPromptSection(workspaceRef, role)` — deletes by role.
+  - `moveHtmlPromptSection(workspaceRef, role, { before | after | to })` — reorders by role or numeric index.
+  - The auto-managed `resources` section is protected: move/remove refuse it with a clear error.
+  - Implementation uses a small depth-counting HTML scanner (handles nested resource-snippet sections inside the resources block correctly).
+- **CLI subcommands wired:** `html list-sections`, `html get-section`, `html remove-section`, `html move-section --before|--after|--to`. Added `--before`, `--after`, `--to` flags to the parser.
+- **TUI integration (read-only viewer):**
+  - `InboxEntry` gained `isHtmlWorkspace?: boolean`. `loadInboxFiles` probes each subdirectory for `manifest.json` and tags it.
+  - HTML workspaces show with a dim `[html]` badge in the inbox listing.
+  - `EditorState` gained `readOnly: boolean`. `openEditorFile(state, filepath, { readOnly })` sets it.
+  - Pressing Enter on an HTML workspace loads `prompt.html` in the editor with `readOnly=true`.
+  - The editor handler short-circuits mutations, `Ctrl+S`, `Ctrl+R`, and `Ctrl+P` in read-only mode. `Ctrl+C` (copy), `Esc` (back to inbox), and all navigation keys are allowed.
+  - The editor view shows `[read-only]` in the header and a trimmed footer hint (just `[Esc] Inbox [Ctrl+C] Copy [Ctrl+/] Help`).
+- **Agent contract updated.** `getAgentInstructions` now has a "1c. Editing HTML Prompt Sections" section documenting the full section vocabulary.
+- **Tests.** `src/html-prompts.test.ts` grew from 36 to 54 tests covering list/get/move (before/after/to)/remove/reserved-protection. Total: 528 across 9 suites, all green. `bunx tsc --noEmit` clean. Manual CLI smoke verified: create → set-section → list-sections → move-section → remove-section → resources-section-protected.
+
 ## Tomorrow's Focus
-- **Manual TUI smoke test of Phase 1.5.** Walk through every screen transition: inbox → editor (open file), editor → inbox (escape, with and without unsaved edits), editor ↔ diff (Ctrl+R), editor → revisions (Ctrl+P) → revision-preview (Enter) → restore (r), help overlay from each screen, search mode, create-folder, rename, delete. Verify nothing visually regressed.
-- **Phase 2 / HTML prompt builder** is unblocked. The next step is the V1–V6 question walkthrough — settle the storage format, authoring surface, and consumption surface before any code. The parallel HTML prompts substrate (`src/html-prompts.ts`, 775 lines, 36 tests) is already landed and ready to plug into.
+- **Manual TUI smoke test of Phase 1.5 + Phase 2 pass 1.** Walk through Phase 1.5 transitions, then create an HTML workspace via CLI and verify it opens read-only in the TUI inbox: `[html]` badge visible, `prompt.html` loads, mutations are blocked, Ctrl+C copies, escape returns cleanly.
+- **Outstanding Phase 2 items** — none gating user use. Possible follow-ups: making HTML workspaces searchable (`collectPromptSearchEntries` currently only finds `.md` files); a TUI status nag when the user tries to type/save in read-only mode (today it silently no-ops).
