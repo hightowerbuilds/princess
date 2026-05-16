@@ -152,6 +152,23 @@ try {
     },
   );
 
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "html-prompt-home"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      await createPrompt("HTML Agent Brief", "web", "html");
+      const paths = getPaths();
+      const workspaceDir = path.join(paths.inboxDir, "web", "html-agent-brief");
+      const html = await readFile(path.join(workspaceDir, "prompt.html"), "utf8");
+      const manifest = await readFile(path.join(workspaceDir, "manifest.json"), "utf8");
+      assert(html.includes("data-princess-prompt"), "createPrompt supports HTML prompt workspaces");
+      assert(manifest.includes('"format": "html"'), "HTML prompt workspace has a manifest");
+    },
+  );
+
   section("listPrompts");
 
   await withEnv(

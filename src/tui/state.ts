@@ -1,9 +1,12 @@
-import { createSignal } from "solid-js";
+import { createStore } from "solid-js/store";
+import { createMemo } from "solid-js";
 import { createBreathingPulse } from "./motion.ts";
-import type { ParsedPromptDocument } from "../prompts.ts";
+import { filterPromptSearchEntries, parsePromptDocument, type ParsedPromptDocument, type PromptSearchEntry } from "../prompts.ts";
+import type { PromptRevision } from "../revisions.ts";
 
 export type AppScreen = "inbox" | "editor" | "diff" | "revisions" | "revision-preview" | "help";
 export type EditorSaveState = "clean" | "dirty" | "saving" | "error";
+export type InboxInputMode = "create-folder" | "rename" | null;
 
 export interface InboxEntry {
   name: string;
@@ -13,80 +16,127 @@ export interface InboxEntry {
   prompt?: ParsedPromptDocument;
 }
 
+export interface TerminalState {
+  columns: number;
+  rows: number;
+}
+
+export interface InboxState {
+  directory: string;
+  files: InboxEntry[];
+  searchEntries: PromptSearchEntry[];
+  cursor: number;
+  scrollOffset: number;
+  searchQuery: string;
+  searchMode: boolean;
+  inputMode: InboxInputMode;
+  inputQuery: string;
+  deleteConfirm: InboxEntry | null;
+}
+
+export interface EditorState {
+  file: string | null;
+  content: string;
+  cursorLine: number;
+  cursorCol: number;
+  saveState: EditorSaveState;
+}
+
+export interface DiffState {
+  oldContent: string;
+  newContent: string;
+  revisionPath: string | null;
+}
+
+export interface RevisionsState {
+  files: PromptRevision[];
+  cursor: number;
+  scrollOffset: number;
+  previewPath: string | null;
+  previewContent: string;
+}
+
+export interface OverlayState {
+  helpReturnTo: AppScreen | null;
+}
+
+export interface TuiStore {
+  screen: AppScreen;
+  running: boolean;
+  overlay: OverlayState;
+  terminal: TerminalState;
+  inbox: InboxState;
+  editor: EditorState;
+  diff: DiffState;
+  revisions: RevisionsState;
+  error: string | null;
+  hardwareCursor: { row: number; col: number } | null;
+}
+
 export function createTuiState() {
-  const [screen, setScreen] = createSignal<AppScreen>("inbox");
+  const [state, setState] = createStore<TuiStore>({
+    screen: "inbox",
+    running: true,
+    overlay: { helpReturnTo: null },
+    terminal: {
+      columns: process.stdout.columns ?? 80,
+      rows: process.stdout.rows ?? 24,
+    },
+    inbox: {
+      directory: "",
+      files: [],
+      searchEntries: [],
+      cursor: 0,
+      scrollOffset: 0,
+      searchQuery: "",
+      searchMode: false,
+      inputMode: null,
+      inputQuery: "",
+      deleteConfirm: null,
+    },
+    editor: {
+      file: null,
+      content: "",
+      cursorLine: 0,
+      cursorCol: 0,
+      saveState: "clean",
+    },
+    diff: {
+      oldContent: "",
+      newContent: "",
+      revisionPath: null,
+    },
+    revisions: {
+      files: [],
+      cursor: 0,
+      scrollOffset: 0,
+      previewPath: null,
+      previewContent: "",
+    },
+    error: null,
+    hardwareCursor: null,
+  });
 
-  // Terminal dimensions
-  const [columns, setColumns] = createSignal(process.stdout.columns ?? 80);
-  const [rows, setRows] = createSignal(process.stdout.rows ?? 24);
-
-  // Inbox
-  const [currentDirectory, setCurrentDirectory] = createSignal("");
-  const [inboxFiles, setInboxFiles] = createSignal<InboxEntry[]>([]);
-  const [inboxCursor, setInboxCursor] = createSignal(0);
-  const [inboxScrollOffset, setInboxScrollOffset] = createSignal(0);
-  const [inboxSearchQuery, setInboxSearchQuery] = createSignal("");
-  const [inboxSearchMode, setInboxSearchMode] = createSignal(false);
-  const [inboxInputMode, setInboxInputMode] = createSignal<"create-folder" | "rename" | null>(null);
-  const [inboxInputQuery, setInboxInputQuery] = createSignal("");
-  const [inboxDeleteConfirm, setInboxDeleteConfirm] = createSignal<InboxEntry | null>(null);
-
-  // Editor
-  const [currentFile, setCurrentFile] = createSignal<string | null>(null);
-  const [fileContent, setFileContent] = createSignal<string>("");
-  const [editorCursorLine, setEditorCursorLine] = createSignal(0);
-  const [editorCursorCol, setEditorCursorCol] = createSignal(0);
-  const [editorSaveState, setEditorSaveState] = createSignal<EditorSaveState>("clean");
-  const [diffOldContent, setDiffOldContent] = createSignal("");
-  const [diffNewContent, setDiffNewContent] = createSignal("");
-  const [diffRevisionPath, setDiffRevisionPath] = createSignal<string | null>(null);
-  const [revisionFiles, setRevisionFiles] = createSignal<{
-    path: string;
-    createdAt: string;
-    content: string;
-  }[]>([]);
-  const [revisionCursor, setRevisionCursor] = createSignal(0);
-  const [revisionScrollOffset, setRevisionScrollOffset] = createSignal(0);
-  const [revisionPreviewPath, setRevisionPreviewPath] = createSignal<string | null>(null);
-  const [revisionPreviewContent, setRevisionPreviewContent] = createSignal("");
-
-  // Global
-  const [error, setError] = createSignal<string | null>(null);
-
-  // Motion
   const idlePulse = createBreathingPulse({ period: 4000, min: 0.4, max: 1.0 });
   const logoPulse = createBreathingPulse({ period: 8000, min: 0, max: 1.0 });
 
-  return {
-    screen, setScreen,
-    columns, setColumns,
-    rows, setRows,
-    currentDirectory, setCurrentDirectory,
-    inboxFiles, setInboxFiles,
-    inboxCursor, setInboxCursor,
-    inboxScrollOffset, setInboxScrollOffset,
-    inboxSearchQuery, setInboxSearchQuery,
-    inboxSearchMode, setInboxSearchMode,
-    inboxInputMode, setInboxInputMode,
-    inboxInputQuery, setInboxInputQuery,
-    inboxDeleteConfirm, setInboxDeleteConfirm,
-    currentFile, setCurrentFile,
-    fileContent, setFileContent,
-    editorCursorLine, setEditorCursorLine,
-    editorCursorCol, setEditorCursorCol,
-    editorSaveState, setEditorSaveState,
-    diffOldContent, setDiffOldContent,
-    diffNewContent, setDiffNewContent,
-    diffRevisionPath, setDiffRevisionPath,
-    revisionFiles, setRevisionFiles,
-    revisionCursor, setRevisionCursor,
-    revisionScrollOffset, setRevisionScrollOffset,
-    revisionPreviewPath, setRevisionPreviewPath,
-    revisionPreviewContent, setRevisionPreviewContent,
-    error, setError,
-    idlePulse,
-    logoPulse
-  };
+  const editorParsedPrompt = createMemo(() => parsePromptDocument(state.editor.content));
+
+  const inboxFilteredSearch = createMemo<InboxEntry[] | null>(() => {
+    const query = state.inbox.searchQuery.trim();
+    if (query.length === 0) return null;
+    if (state.inbox.searchEntries.length === 0) return null;
+    const filtered = filterPromptSearchEntries(query, state.inbox.searchEntries);
+    return filtered.map((entry) => ({
+      name: entry.name,
+      label: entry.relativePath,
+      path: entry.path,
+      isDirectory: false,
+      prompt: entry.document,
+    }));
+  });
+
+  return { state, setState, idlePulse, logoPulse, editorParsedPrompt, inboxFilteredSearch };
 }
 
 export type TuiState = ReturnType<typeof createTuiState>;

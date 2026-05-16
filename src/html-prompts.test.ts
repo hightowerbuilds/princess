@@ -1,0 +1,192 @@
+import os from "node:os";
+import path from "node:path";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { getPaths } from "./paths.ts";
+import {
+  addHtmlPromptAsset,
+  addHtmlPromptSource,
+  compileHtmlPromptWorkspace,
+  createHtmlPromptWorkspace,
+  importHtmlPromptTable,
+  listHtmlPromptResources,
+  lintHtmlPromptWorkspace,
+  readHtmlPromptSource,
+  readHtmlPromptManifest,
+  removeHtmlPromptResource,
+  upsertHtmlPromptSection,
+} from "./html-prompts.ts";
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition: boolean, message: string) {
+  if (condition) passed++;
+  else {
+    failed++;
+    console.error(`  FAIL: ${message}`);
+  }
+}
+
+function assertEq<T>(actual: T, expected: T, message: string) {
+  if (JSON.stringify(actual) === JSON.stringify(expected)) passed++;
+  else {
+    failed++;
+    console.error(`  FAIL: ${message}`);
+    console.error(`    expected: ${JSON.stringify(expected)}`);
+    console.error(`    actual:   ${JSON.stringify(actual)}`);
+  }
+}
+
+function section(name: string) {
+  console.log(`\n── ${name} ──`);
+}
+
+async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
+  const saved = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(vars)) {
+    saved.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of saved.entries()) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+const tempRoot = await mkdtemp(path.join(os.tmpdir(), "princess-html-prompts-"));
+
+try {
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "home"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      const fixtureDir = path.join(tempRoot, "fixtures");
+      await mkdir(fixtureDir, { recursive: true });
+
+      section("createHtmlPromptWorkspace");
+
+      const workspace = await createHtmlPromptWorkspace("Landing Page Build", { category: "web" });
+      const paths = getPaths();
+      assertEq(workspace.path, path.join(paths.inboxDir, "web", "landing-page-build"), "creates workspace under category");
+      assert((await readFile(path.join(workspace.path, "prompt.html"), "utf8")).includes("data-princess-prompt"), "writes prompt.html");
+      assert((await readFile(path.join(workspace.path, "manifest.json"), "utf8")).includes('"format": "html"'), "writes manifest");
+
+      section("addHtmlPromptSource");
+
+      const requirementsPath = path.join(fixtureDir, "requirements.md");
+      await writeFile(requirementsPath, "# Requirements\n\nUse the existing design system.\n", "utf8");
+      const source = await addHtmlPromptSource("web/landing-page-build", requirementsPath, {
+        name: "requirements",
+        trust: "trusted",
+      });
+      assertEq(source.id, "requirements", "uses requested source id");
+      assertEq(source.path, "sources/requirements.md", "copies source into workspace");
+      assertEq(source.trust, "trusted", "stores trust level");
+
+      const promptAfterSource = await readFile(path.join(workspace.path, "prompt.html"), "utf8");
+      assert(promptAfterSource.includes('data-princess-include="requirements"'), "adds source include to prompt.html");
+
+      section("addHtmlPromptAsset");
+
+      const imagePath = path.join(fixtureDir, "wireframe.png");
+      await writeFile(imagePath, "fake png bytes", "utf8");
+      const asset = await addHtmlPromptAsset("web/landing-page-build", imagePath, {
+        name: "wireframe",
+        alt: "Mobile wireframe",
+      });
+      assertEq(asset.id, "wireframe", "uses requested asset id");
+      assertEq(asset.path, "assets/wireframe.png", "copies asset into workspace");
+      assertEq(asset.alt, "Mobile wireframe", "stores model-facing alt text");
+
+      section("importHtmlPromptTable");
+
+      const pricingPath = path.join(fixtureDir, "pricing.csv");
+      await writeFile(pricingPath, "Plan,Price\nStarter,$10\nPro,$30\n", "utf8");
+      const table = await importHtmlPromptTable("web/landing-page-build", pricingPath, {
+        name: "pricing",
+        trust: "untrusted",
+      });
+      assertEq(table.id, "pricing", "uses requested table id");
+      assertEq(table.path, "partials/pricing.table.html", "writes table partial");
+      const tableHtml = await readFile(path.join(workspace.path, table.path), "utf8");
+      assert(tableHtml.includes("<table>"), "generates HTML table");
+      assert(tableHtml.includes("<th>Plan</th>"), "generates table header");
+
+      section("upsertHtmlPromptSection");
+
+      await upsertHtmlPromptSection("web/landing-page-build", "constraints", "Use <button> styles from the repo.");
+      await upsertHtmlPromptSection("web/landing-page-build", "instructions", "<ul><li>Build the page.</li></ul>", {
+        heading: "Task",
+        mode: "html",
+      });
+      const promptSource = await readHtmlPromptSource("web/landing-page-build");
+      assert(promptSource.includes('data-princess-role="constraints"'), "adds new semantic section");
+      assert(promptSource.includes("Use &lt;button&gt; styles from the repo."), "escapes text sections");
+      assert(promptSource.includes("<ul><li>Build the page.</li></ul>"), "allows explicit HTML sections");
+      assert(promptSource.includes("<h2>Task</h2>"), "uses custom section heading");
+
+      section("manifest");
+
+      const manifest = await readHtmlPromptManifest(workspace.path);
+      assertEq(manifest.resources.length, 3, "tracks three resources");
+      assertEq(manifest.resources.map((resource) => resource.type), ["source", "asset", "table"], "tracks resource types");
+
+      section("compileHtmlPromptWorkspace");
+
+      const compiledHtml = await compileHtmlPromptWorkspace("web/landing-page-build");
+      assertEq(compiledHtml.target, "html", "defaults to HTML compile target");
+      assert(compiledHtml.content.includes("Use the existing design system."), "expands source content into compiled HTML");
+      assert(compiledHtml.content.includes("<table>"), "expands table partial into compiled HTML");
+      assert((await readFile(compiledHtml.path, "utf8")).includes("Compiled by Princess"), "writes compiled HTML to dist");
+
+      const compiledMarkdown = await compileHtmlPromptWorkspace("web/landing-page-build", { target: "markdown" });
+      assert(compiledMarkdown.path.endsWith("compiled.md"), "writes markdown compile target");
+      assert(compiledMarkdown.content.includes("## Asset Attachments"), "markdown compile lists assets");
+      assert(compiledMarkdown.content.includes("Mobile wireframe"), "markdown compile includes asset alt text");
+
+      const compiledJson = await compileHtmlPromptWorkspace("web/landing-page-build", { target: "json" });
+      const parsedJson = JSON.parse(compiledJson.content);
+      assertEq(parsedJson.format, "princess-html-compiled", "writes structured compiled package");
+      assertEq(parsedJson.attachments[0].id, "wireframe", "structured package lists asset attachments");
+      assert(parsedJson.prompt.content.includes("Use the existing design system."), "structured package includes compiled HTML content");
+
+      section("listHtmlPromptResources");
+
+      const resources = await listHtmlPromptResources("web/landing-page-build");
+      assertEq(resources.map((resource) => resource.id), ["requirements", "wireframe", "pricing"], "lists resources in manifest order");
+
+      section("removeHtmlPromptResource");
+
+      const removed = await removeHtmlPromptResource("web/landing-page-build", "pricing", { deleteFile: true });
+      assertEq(removed?.id, "pricing", "removes requested resource");
+      const afterRemove = await listHtmlPromptResources("web/landing-page-build");
+      assertEq(afterRemove.map((resource) => resource.id), ["requirements", "wireframe"], "updates manifest after remove");
+      const promptAfterRemove = await readFile(path.join(workspace.path, "prompt.html"), "utf8");
+      assert(!promptAfterRemove.includes('data-princess-id="pricing"'), "removes resource snippet from prompt.html");
+
+      section("lintHtmlPromptWorkspace");
+
+      const issues = await lintHtmlPromptWorkspace("web/landing-page-build");
+      assertEq(issues.filter((issue) => issue.severity === "error").length, 0, "valid workspace has no lint errors");
+
+      await writeFile(path.join(workspace.path, "prompt.html"), "<script>alert('x')</script>", "utf8");
+      const unsafeIssues = await lintHtmlPromptWorkspace("web/landing-page-build");
+      assert(unsafeIssues.some((issue) => issue.code === "forbidden-tag"), "lint catches forbidden tags");
+    },
+  );
+} finally {
+  await rm(tempRoot, { recursive: true, force: true });
+}
+
+console.log(`\n${"─".repeat(40)}`);
+console.log(`Results: ${passed} passed, ${failed} failed`);
+if (failed > 0) process.exit(1);
+else console.log("All tests passed!");

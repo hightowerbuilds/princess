@@ -6,7 +6,7 @@ import { truncateEnd } from "../typeset-compose.ts";
 import { box } from "../typeset-compose.ts";
 import { dropShadow } from "../aesthetics.ts";
 
-import { gradientText, gradientTextMulti } from "../aesthetics.ts";
+import { gradientTextMulti } from "../aesthetics.ts";
 
 function getPulseStops(state: TuiState): Array<[number, [number, number, number]]> {
   const t = state.logoPulse.value();
@@ -57,13 +57,13 @@ function renderPromptMeta(entry: { prompt?: { metadata: { status?: string; categ
 }
 
 export function renderInbox(state: TuiState, cols: number, rows: number): string[] {
-  const files = state.inboxFiles();
-  const cursor = state.inboxCursor();
-  const error = state.error();
-  const currentDir = state.currentDirectory();
-  const offset = state.inboxScrollOffset();
-  const query = state.inboxSearchQuery().trim();
-  const searchMode = state.inboxSearchMode();
+  const files = state.inboxFilteredSearch() ?? state.state.inbox.files;
+  const cursor = state.state.inbox.cursor;
+  const error = state.state.error;
+  const currentDir = state.state.inbox.directory;
+  const offset = state.state.inbox.scrollOffset;
+  const query = state.state.inbox.searchQuery.trim();
+  const searchMode = state.state.inbox.searchMode;
   
   const lines: string[] = [];
   
@@ -175,9 +175,9 @@ export function renderInbox(state: TuiState, cols: number, rows: number): string
   lines.push(...dropShadow(listCard, cols - 1));
 
   lines.push("");
-  const inputMode = state.inboxInputMode();
-  const inputQuery = state.inboxInputQuery();
-  const deleteConfirm = state.inboxDeleteConfirm();
+  const inputMode = state.state.inbox.inputMode;
+  const inputQuery = state.state.inbox.inputQuery;
+  const deleteConfirm = state.state.inbox.deleteConfirm;
 
   if (deleteConfirm) {
     lines.push(yellow(bold(` Delete "${deleteConfirm.name}"? (y/n)`)));

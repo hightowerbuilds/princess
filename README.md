@@ -67,6 +67,42 @@ Create a prompt inside a category folder:
 princess create-prompt "Title of the Prompt" --category "frontend"
 ```
 
+Create an HTML prompt workspace:
+
+```bash
+princess create-prompt "Landing Page Build" --format html --category "frontend"
+```
+
+An HTML workspace is a folder-backed prompt package:
+
+```text
+landing-page-build/
+  prompt.html
+  manifest.json
+  assets/
+  sources/
+  partials/
+  dist/
+```
+
+Add local resources for an agent-readable prompt package:
+
+```bash
+princess html add-source frontend/landing-page-build ./requirements.md --name requirements --trust trusted
+princess html add-asset frontend/landing-page-build ./wireframe.png --name wireframe --alt "Mobile wireframe"
+princess html import-table frontend/landing-page-build ./pricing.csv --name pricing --trust untrusted
+princess html set-section frontend/landing-page-build constraints --text "Use existing project patterns."
+princess html set-section frontend/landing-page-build output-format --from ./handoff.md --heading "Output Format"
+princess html list frontend/landing-page-build
+princess html remove-resource frontend/landing-page-build pricing --delete-file
+princess html lint frontend/landing-page-build
+princess html compile frontend/landing-page-build --target html
+princess html compile frontend/landing-page-build --target markdown
+princess html compile frontend/landing-page-build --target json
+```
+
+HTML prompts use `prompt.html` as the structured authoring surface and `manifest.json` as the local resource index. Compilation expands local text/table resources into `dist/compiled.html`, `dist/compiled.md`, or `dist/compiled.json`; image assets remain explicit attachments because model APIs generally require typed file inputs.
+
 List prompts:
 
 ```bash
@@ -124,13 +160,14 @@ The dynamic path to your inbox is stored in `AGENT.md` within your Princess conf
 ## Project Layout
 
 - `src/cli/index.ts` - command parsing and inbox file creation/listing
+- `src/html-prompts.ts` - folder-backed HTML prompt workspaces, resources, linting, and compilation
 - `src/tui/tui.ts` - terminal setup, raw mode, render/input lifecycle
 - `src/tui/app.ts` - inbox/editor behavior
 - `src/tui/views/` - rendered inbox and editor screens
 - `src/tui/state.ts` - Solid signal state for the TUI
 - `src/tui/input.ts` - key parsing
 - `src/tui/terminal.ts` - terminal capability and cleanup helpers
-- `src/tui/typeset*.ts`, `compositor.ts`, `motion.ts`, `interaction.ts`, `visualize.ts`, `accessibility.ts` - reusable terminal UI utilities
+- `src/tui/typeset*.ts`, `motion.ts`, `aesthetics.ts` - reusable terminal UI utilities
 
 ## Development
 

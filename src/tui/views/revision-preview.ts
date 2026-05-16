@@ -5,8 +5,8 @@ import { prepare, layout, materializeToStrings } from "../typeset.ts";
 import { parsePromptDocument } from "../../prompts.ts";
 
 export function renderRevisionPreview(state: TuiState, cols: number, rows: number): string[] {
-  const previewPath = state.revisionPreviewPath();
-  const content = state.revisionPreviewContent();
+  const previewPath = state.state.revisions.previewPath;
+  const content = state.state.revisions.previewContent;
   const filename = previewPath ? path.basename(previewPath) : "Revision";
   const parsed = parsePromptDocument(content);
 

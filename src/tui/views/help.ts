@@ -11,9 +11,9 @@ function statusLine(label: string, value: string): string {
 export function renderHelp(state: TuiState, cols: number, rows: number): string[] {
   const paths = getPaths();
   const lines: string[] = [];
-  const screen = state.screen();
-  const currentFile = state.currentFile();
-  const currentDir = state.currentDirectory();
+  const screen = state.state.screen;
+  const currentFile = state.state.editor.file;
+  const currentDir = state.state.inbox.directory;
 
   lines.push(bgGray(white(` Help & Status ${"".padEnd(Math.max(0, cols - 15))} `)));
   lines.push(dim(" Princess keeps prompts as local Markdown files. Press Esc to return."));

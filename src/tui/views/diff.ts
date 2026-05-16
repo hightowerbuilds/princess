@@ -64,10 +64,10 @@ function renderDiffLines(oldText: string, newText: string, width: number): strin
 }
 
 export function renderDiff(state: TuiState, cols: number, rows: number): string[] {
-  const oldContent = state.diffOldContent();
-  const newContent = state.diffNewContent();
-  const currentFile = state.currentFile();
-  const revisionPath = state.diffRevisionPath();
+  const oldContent = state.state.diff.oldContent;
+  const newContent = state.state.diff.newContent;
+  const currentFile = state.state.editor.file;
+  const revisionPath = state.state.diff.revisionPath;
   const filename = currentFile ? path.basename(currentFile) : "Untitled";
 
   const lines: string[] = [];

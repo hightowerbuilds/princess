@@ -9,6 +9,5 @@
     "types": ["bun"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/tui/stages.ts", "src/tui/progress.ts"]
+  "include": ["src/**/*.ts"]
 }

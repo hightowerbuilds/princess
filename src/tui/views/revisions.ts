@@ -5,10 +5,10 @@ import { parsePromptDocument } from "../../prompts.ts";
 import path from "node:path";
 
 export function renderRevisions(state: TuiState, cols: number, rows: number): string[] {
-  const revisions = state.revisionFiles();
-  const cursor = state.revisionCursor();
-  const offset = state.revisionScrollOffset();
-  const filename = state.currentFile() ? path.basename(state.currentFile()!) : "Untitled";
+  const revisions = state.state.revisions.files;
+  const cursor = state.state.revisions.cursor;
+  const offset = state.state.revisions.scrollOffset;
+  const filename = state.state.editor.file ? path.basename(state.state.editor.file) : "Untitled";
   const listHeight = Math.max(rows - 10, 5);
 
   const lines: string[] = [];

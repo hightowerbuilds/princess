@@ -1,111 +1,177 @@
-import { batch } from "solid-js";
-import os from "node:os";
+import { batch, createEffect, createRoot, onCleanup } from "solid-js";
 import path from "node:path";
-import { readdir, readFile, mkdir, unlink } from "node:fs/promises";
+import { readdir, readFile, mkdir, unlink, rename, rmdir, stat } from "node:fs/promises";
 import type { KeyEvent } from "./input.ts";
 import type { TuiState } from "./state.ts";
+import type { AppScreen } from "./state.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { getPaths } from "../paths.ts";
-import { filterPromptSearchEntries, parsePromptDocument, type PromptSearchEntry } from "../prompts.ts";
+import { parsePromptDocument, sanitizePromptTitle, type PromptSearchEntry } from "../prompts.ts";
 import { recordPromptRevision, readLatestPromptRevision, listPromptRevisions } from "../revisions.ts";
 import { atomicWriteFile, cleanupTempFiles } from "../storage.ts";
 
-type KeyResolver = (key: KeyEvent) => void;
-let activeKeyResolver: KeyResolver | null = null;
+const SAVE_DEBOUNCE_MS = 1200;
 
-export function handleKey(key: KeyEvent, _state: TuiState): void {
-  if (activeKeyResolver) {
-    activeKeyResolver(key);
-  } else if (key.name === "ctrl+c") {
-    process.exit(130);
+interface EditorSaveAPI {
+  save: (forceSnapshot: boolean) => Promise<void>;
+  cancelPending: () => void;
+  resetBaseline: () => void;
+}
+
+let editorSaveAPI: EditorSaveAPI | null = null;
+
+export function handleKey(key: KeyEvent, state: TuiState): void {
+  if (!state.state.running) return;
+
+  const screen = state.state.screen;
+
+  if (screen !== "help" && isHelpHotkey(key)) {
+    openHelp(state);
+    return;
+  }
+
+  switch (screen) {
+    case "inbox":
+      void handleInboxKey(key, state);
+      return;
+    case "editor":
+      void handleEditorKey(key, state);
+      return;
+    case "diff":
+      handleDiffKey(key, state);
+      return;
+    case "revisions":
+      void handleRevisionsKey(key, state);
+      return;
+    case "revision-preview":
+      void handleRevisionPreviewKey(key, state);
+      return;
+    case "help":
+      handleHelpKey(key, state);
+      return;
   }
 }
 
 export async function runApp(state: TuiState): Promise<void> {
   const { inboxDir: baseInboxDir } = getPaths();
-  
-  // Ensure base inbox directory exists
+
   try {
     await mkdir(baseInboxDir, { recursive: true });
-    // Cleanup stale temp files on startup
     void cleanupTempFiles(baseInboxDir);
   } catch {}
 
-  while (true) {
-    state.setScreen("inbox");
-    state.idlePulse.start();
-    state.logoPulse.start();
+  state.idlePulse.start();
+  state.logoPulse.start();
 
-    // Reload files for current directory
-    await loadInboxFiles(state, baseInboxDir);
+  await new Promise<void>((resolve) => {
+    createRoot((dispose) => {
+      editorSaveAPI = createEditorSaveLoop(state);
 
-    const action = await waitForInboxSelection(state);
-    state.idlePulse.stop();
-
-    if (action === "quit") return;
-    if (action === "refresh") continue;
-
-    if (action === "edit") {
-      const files = state.inboxFiles();
-      const cursor = state.inboxCursor();
-      const selected = files[cursor];
-
-      if (selected) {
-        if (selected.isDirectory) {
-           if (selected.name === "..") {
-             // Go up one directory
-             const current = state.currentDirectory();
-             const parent = path.dirname(current);
-             state.setCurrentDirectory(parent === "." || current === parent ? "" : parent);
-           } else {
-             // Go into subdirectory
-             const targetPath = path.join(state.currentDirectory(), selected.name);
-             state.setCurrentDirectory(targetPath);
-           }
-           state.setInboxCursor(0);
-        } else {
-          await loadEditor(state, selected.path);
-          state.setScreen("editor");
-          await waitForEditor(state, selected.path);
+      createEffect(() => {
+        const screen = state.state.screen;
+        const directory = state.state.inbox.directory;
+        if (screen === "inbox") {
+          void loadInboxFiles(state, baseInboxDir, directory);
         }
-      }
+      });
+
+      createEffect(() => {
+        if (!state.state.running) {
+          dispose();
+          resolve();
+        }
+      });
+    });
+  });
+
+  state.idlePulse.stop();
+  state.logoPulse.stop();
+  editorSaveAPI = null;
+}
+
+function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
+  let baseline = "";
+  let currentFile: string | null = null;
+  let inFlight: Promise<void> | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const cancelPending = () => {
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
     }
+  };
+
+  const save = async (forceSnapshot: boolean): Promise<void> => {
+    while (inFlight) await inFlight;
+    const file = currentFile;
+    if (!file) return;
+    inFlight = (async () => {
+      try {
+        const content = state.state.editor.content;
+        if (content === baseline) {
+          state.setState("editor", "saveState", "clean");
+          return;
+        }
+        const previousContent = await readFile(file, "utf8").catch(() => null);
+        if (previousContent !== null && previousContent !== content && (forceSnapshot || baseline !== "")) {
+          await recordPromptRevision(file, previousContent);
+        }
+        state.setState("editor", "saveState", "saving");
+        await atomicWriteFile(file, content);
+        baseline = content;
+        state.setState("editor", "saveState", "clean");
+      } catch (err: any) {
+        state.setState("editor", "saveState", "error");
+        state.setState("error", err.message);
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+
+  const resetBaseline = () => {
+    currentFile = state.state.editor.file;
+    baseline = state.state.editor.content;
+    cancelPending();
+  };
+
+  createEffect(() => {
+    const screen = state.state.screen;
+    const content = state.state.editor.content;
+    if (screen !== "editor") return;
+    if (content === baseline) return;
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null;
+      void save(false);
+    }, SAVE_DEBOUNCE_MS);
+    onCleanup(cancelPending);
+  });
+
+  return { save, cancelPending, resetBaseline };
+}
+
+async function loadSearchEntries(state: TuiState, baseInboxDir: string) {
+  try {
+    const currentSub = state.state.inbox.directory;
+    const targetDir = path.join(baseInboxDir, currentSub);
+    const entries = await collectPromptSearchEntries(targetDir, "");
+    state.setState("inbox", "searchEntries", entries);
+  } catch (err) {
+    state.setState("error", err instanceof Error ? err.message : String(err));
   }
 }
 
-async function loadInboxFiles(state: TuiState, baseInboxDir: string) {
+async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub: string) {
   try {
-    const currentSub = state.currentDirectory();
     const targetDir = path.join(baseInboxDir, currentSub);
-    const query = state.inboxSearchQuery().trim();
-
-    if (query.length > 0) {
-      const entries = await collectPromptSearchEntries(targetDir, "");
-      const filtered = filterPromptSearchEntries(query, entries);
-
-      batch(() => {
-        state.setInboxFiles(
-          filtered.map((entry) => ({
-            name: entry.name,
-            label: entry.relativePath,
-            path: entry.path,
-            isDirectory: false,
-            prompt: entry.document,
-          })),
-        );
-        if (state.inboxCursor() >= filtered.length) {
-          state.setInboxCursor(Math.max(0, filtered.length - 1));
-        }
-        state.setInboxScrollOffset(0);
-      });
-      return;
-    }
 
     const entries = await readdir(targetDir, { withFileTypes: true });
-    
+
     const entriesList = await Promise.all(
       entries
-        .filter((e) => e.isDirectory() || e.name.endsWith(".md"))
+        .filter((e) => e.isDirectory() || e.name.endsWith(".md") || e.name.endsWith(".html"))
         .map(async (e) => {
           const item = {
             name: e.name,
@@ -126,7 +192,6 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string) {
         }),
     );
 
-    // Sort: directories first, then alphabetically
     entriesList.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
@@ -137,19 +202,19 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string) {
       entriesList.unshift({
         name: "..",
         path: path.dirname(targetDir),
-        isDirectory: true
+        isDirectory: true,
       });
     }
 
     batch(() => {
-      state.setInboxFiles(entriesList);
-      if (state.inboxCursor() >= entriesList.length) {
-        state.setInboxCursor(Math.max(0, entriesList.length - 1));
+      state.setState("inbox", "files", entriesList);
+      if (state.state.inbox.cursor >= entriesList.length) {
+        state.setState("inbox", "cursor", Math.max(0, entriesList.length - 1));
       }
-      state.setInboxScrollOffset(Math.min(state.inboxScrollOffset(), Math.max(0, entriesList.length - 1)));
+      state.setState("inbox", "scrollOffset", Math.min(state.state.inbox.scrollOffset, Math.max(0, entriesList.length - 1)));
     });
   } catch (err) {
-    state.setError(err instanceof Error ? err.message : String(err));
+    state.setState("error", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -186,628 +251,574 @@ async function collectPromptSearchEntries(rootDir: string, relativeDir: string):
   return results;
 }
 
-function waitForInboxSelection(state: TuiState): Promise<"edit" | "quit" | "refresh"> {
-  return new Promise((resolve) => {
-    activeKeyResolver = async (key: KeyEvent) => {
-      if (isHelpHotkey(key)) {
-        await openHelpScreen(state);
-        return;
-      }
+function isHelpHotkey(key: KeyEvent): boolean {
+  if (key.ctrl && key.name === "ctrl+/") return true;
+  if (!key.ctrl && !key.meta && key.name === "?") return true;
+  return false;
+}
 
-      const files = state.inboxFiles();
-      const cursor = state.inboxCursor();
-      const offset = state.inboxScrollOffset();
-      const listHeight = Math.max(state.rows() - 14, 5);
-      const isSearchMode = state.inboxSearchMode();
-      const inputMode = state.inboxInputMode();
-      const deleteConfirm = state.inboxDeleteConfirm();
-
-      if (deleteConfirm) {
-        if (key.name === "y" || key.name === "Y") {
-          try {
-            if (deleteConfirm.isDirectory) {
-              await import("node:fs/promises").then((fs) => fs.rmdir(deleteConfirm.path));
-            } else {
-              await unlink(deleteConfirm.path);
-            }
-            state.setError(`Deleted ${deleteConfirm.name}`);
-          } catch (err: any) {
-            state.setError(err.message);
-          }
-          state.setInboxDeleteConfirm(null);
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name === "n" || key.name === "N" || key.name === "escape") {
-          state.setInboxDeleteConfirm(null);
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        // Ignore other keys while confirming delete
-        activeKeyResolver = null;
-        resolve("refresh");
-        return;
-      }
-
-      if (inputMode) {
-        if (key.name === "escape") {
-          batch(() => {
-            state.setInboxInputMode(null);
-            state.setInboxInputQuery("");
-            state.setError(null);
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name === "enter") {
-          const query = state.inboxInputQuery().trim();
-          if (query.length > 0) {
-            try {
-              const { inboxDir: baseInboxDir } = getPaths();
-              const currentSub = state.currentDirectory();
-              const targetParent = path.join(baseInboxDir, currentSub);
-
-              if (inputMode === "create-folder") {
-                await mkdir(path.join(targetParent, query), { recursive: true });
-                state.setError(`Created folder: ${query}`);
-              } else if (inputMode === "rename") {
-                const selected = files[cursor];
-                if (selected && selected.name !== "..") {
-                  const oldPath = selected.path;
-                  const newPath = path.join(path.dirname(oldPath), query);
-                  await import("node:fs/promises").then(fs => fs.rename(oldPath, newPath));
-                  state.setError(`Renamed to: ${query}`);
-                }
-              }
-            } catch (err: any) {
-              state.setError(err.message);
-            }
-          }
-          batch(() => {
-            state.setInboxInputMode(null);
-            state.setInboxInputQuery("");
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name === "backspace") {
-          batch(() => {
-            state.setInboxInputQuery(state.inboxInputQuery().slice(0, -1));
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name.length === 1 && !key.ctrl && !key.meta) {
-          batch(() => {
-            state.setInboxInputQuery(state.inboxInputQuery() + (key.shift ? key.name.toUpperCase() : key.name));
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-        
-        if (key.name === "space") {
-          batch(() => {
-            state.setInboxInputQuery(state.inboxInputQuery() + " ");
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        activeKeyResolver = null;
-        resolve("refresh");
-        return;
-      }
-
-      if (isSearchMode) {
-        if (key.name === "escape") {
-          batch(() => {
-            state.setInboxSearchMode(false);
-            state.setInboxSearchQuery("");
-            state.setInboxCursor(0);
-            state.setInboxScrollOffset(0);
-            state.setError(null);
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name === "enter") {
-          batch(() => {
-            state.setInboxSearchMode(false);
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name === "backspace") {
-          batch(() => {
-            state.setInboxSearchQuery(state.inboxSearchQuery().slice(0, -1));
-            state.setInboxCursor(0);
-            state.setInboxScrollOffset(0);
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        if (key.name.length === 1 && !key.ctrl && !key.meta) {
-          batch(() => {
-            state.setInboxSearchQuery(state.inboxSearchQuery() + key.name);
-            state.setInboxCursor(0);
-            state.setInboxScrollOffset(0);
-          });
-          activeKeyResolver = null;
-          resolve("refresh");
-          return;
-        }
-
-        activeKeyResolver = null;
-        resolve("refresh");
-        return;
-      }
-
-      switch (key.name) {
-        case "/": {
-          batch(() => {
-            state.setInboxSearchMode(true);
-            state.setInboxCursor(0);
-            state.setInboxScrollOffset(0);
-          });
-          break;
-        }
-        case "n": {
-          if (!key.ctrl && !key.meta) {
-            batch(() => {
-              state.setInboxInputMode("create-folder");
-              state.setInboxInputQuery("");
-            });
-          }
-          break;
-        }
-        case "r": {
-          if (!key.ctrl && !key.meta && files.length > 0) {
-            const selected = files[cursor];
-            if (selected && selected.name !== "..") {
-              batch(() => {
-                state.setInboxInputMode("rename");
-                state.setInboxInputQuery(selected.name);
-              });
-            } else {
-              state.setError("Cannot rename parent directory link.");
-            }
-          }
-          break;
-        }
-        case "down":
-        case "j": {
-          if (cursor < files.length - 1) {
-             const next = cursor + 1;
-             state.setInboxCursor(next);
-             if (next >= offset + listHeight) {
-               state.setInboxScrollOffset(next - listHeight + 1);
-             }
-          }
-          break;
-        }
-        case "up":
-        case "k": {
-          if (cursor > 0) {
-            const prev = cursor - 1;
-            state.setInboxCursor(prev);
-            if (prev < offset) {
-              state.setInboxScrollOffset(prev);
-            }
-          }
-          break;
-        }
-        case "pagedown": {
-          const next = Math.min(cursor + listHeight, files.length - 1);
-          state.setInboxCursor(next);
-          state.setInboxScrollOffset(Math.min(next, Math.max(0, files.length - listHeight)));
-          break;
-        }
-        case "pageup": {
-          const prev = Math.max(cursor - listHeight, 0);
-          state.setInboxCursor(prev);
-          state.setInboxScrollOffset(prev);
-          break;
-        }
-        case "c": {
-          if (files.length > 0 && !key.ctrl && !key.meta) {
-             const selected = files[cursor];
-             if (!selected.isDirectory) {
-               try {
-                  const content = await readFile(selected.path, "utf8");
-                  await copyToClipboard(content);
-                  state.setError("Copied to clipboard!");
-               } catch (err: any) {
-                  state.setError(err.message);
-               }
-             } else {
-               state.setError("Cannot copy a directory.");
-             }
-             activeKeyResolver = null;
-             resolve("refresh");
-          }
-          break;
-        }
-        case "d": {
-          if (files.length > 0 && !key.ctrl && !key.meta) {
-             const selected = files[cursor];
-             if (selected.name === "..") {
-               state.setError("Cannot delete parent directory link.");
-             } else {
-               batch(() => {
-                 state.setInboxDeleteConfirm(selected);
-                 state.setError(null);
-               });
-             }
-             activeKeyResolver = null;
-             resolve("refresh");
-          }
-          break;
-        }
-        case "enter": {
-          if (files.length > 0) {
-            activeKeyResolver = null;
-            resolve("edit");
-          }
-          break;
-        }
-        case "ctrl+c":
-        case "q":
-        case "escape": {
-          activeKeyResolver = null;
-          resolve("quit");
-          break;
-        }
-      }
-    };
+function openHelp(state: TuiState): void {
+  batch(() => {
+    state.setState("overlay", "helpReturnTo", state.state.screen);
+    state.setState("screen", "help");
   });
 }
 
-async function loadEditor(state: TuiState, filepath: string) {
+function closeHelp(state: TuiState): void {
+  const target: AppScreen = state.state.overlay.helpReturnTo ?? "inbox";
+  batch(() => {
+    state.setState("screen", target);
+    state.setState("overlay", "helpReturnTo", null);
+  });
+}
+
+function handleHelpKey(key: KeyEvent, state: TuiState): void {
+  if (isHelpHotkey(key) || key.name === "escape" || key.name === "enter") {
+    closeHelp(state);
+  }
+}
+
+// ── Inbox ─────────────────────────────────────────────────────────────────
+
+async function handleInboxKey(key: KeyEvent, state: TuiState): Promise<void> {
+  const files = state.inboxFilteredSearch() ?? state.state.inbox.files;
+  const cursor = state.state.inbox.cursor;
+  const offset = state.state.inbox.scrollOffset;
+  const listHeight = Math.max(state.state.terminal.rows - 14, 5);
+  const isSearchMode = state.state.inbox.searchMode;
+  const inputMode = state.state.inbox.inputMode;
+  const deleteConfirm = state.state.inbox.deleteConfirm;
+  const { inboxDir: baseInboxDir } = getPaths();
+
+  if (deleteConfirm) {
+    if (key.name === "y" || key.name === "Y") {
+      try {
+        if (deleteConfirm.isDirectory) {
+          await rmdir(deleteConfirm.path);
+        } else {
+          await unlink(deleteConfirm.path);
+        }
+        state.setState("error", `Deleted ${deleteConfirm.name}`);
+      } catch (err: any) {
+        state.setState("error", err.message);
+      }
+      state.setState("inbox", "deleteConfirm", null);
+      void loadInboxFiles(state, baseInboxDir, state.state.inbox.directory);
+      return;
+    }
+    if (key.name === "n" || key.name === "N" || key.name === "escape") {
+      state.setState("inbox", "deleteConfirm", null);
+    }
+    return;
+  }
+
+  if (inputMode) {
+    if (key.name === "escape") {
+      batch(() => {
+        state.setState("inbox", "inputMode", null);
+        state.setState("inbox", "inputQuery", "");
+        state.setState("error", null);
+      });
+      return;
+    }
+    if (key.name === "enter") {
+      const query = state.state.inbox.inputQuery.trim();
+      if (query.length > 0) {
+        try {
+          const currentSub = state.state.inbox.directory;
+          const targetParent = path.join(baseInboxDir, currentSub);
+          if (inputMode === "create-folder") {
+            await mkdir(path.join(targetParent, query), { recursive: true });
+            state.setState("error", `Created folder: ${query}`);
+          } else if (inputMode === "rename") {
+            const selected = files[cursor];
+            if (selected && selected.name !== "..") {
+              const oldPath = selected.path;
+              const newPath = path.join(path.dirname(oldPath), query);
+              await rename(oldPath, newPath);
+              state.setState("error", `Renamed to: ${query}`);
+            }
+          }
+        } catch (err: any) {
+          state.setState("error", err.message);
+        }
+      }
+      batch(() => {
+        state.setState("inbox", "inputMode", null);
+        state.setState("inbox", "inputQuery", "");
+      });
+      void loadInboxFiles(state, baseInboxDir, state.state.inbox.directory);
+      return;
+    }
+    if (key.name === "backspace") {
+      state.setState("inbox", "inputQuery", state.state.inbox.inputQuery.slice(0, -1));
+      return;
+    }
+    if (key.name === "space") {
+      state.setState("inbox", "inputQuery", state.state.inbox.inputQuery + " ");
+      return;
+    }
+    if (key.name.length === 1 && !key.ctrl && !key.meta) {
+      state.setState("inbox", "inputQuery", state.state.inbox.inputQuery + (key.shift ? key.name.toUpperCase() : key.name));
+      return;
+    }
+    return;
+  }
+
+  if (isSearchMode) {
+    if (key.name === "escape") {
+      batch(() => {
+        state.setState("inbox", "searchMode", false);
+        state.setState("inbox", "searchQuery", "");
+        state.setState("inbox", "searchEntries", []);
+        state.setState("inbox", "cursor", 0);
+        state.setState("inbox", "scrollOffset", 0);
+        state.setState("error", null);
+      });
+      return;
+    }
+    if (key.name === "enter") {
+      state.setState("inbox", "searchMode", false);
+      return;
+    }
+    if (key.name === "backspace") {
+      batch(() => {
+        state.setState("inbox", "searchQuery", state.state.inbox.searchQuery.slice(0, -1));
+        state.setState("inbox", "cursor", 0);
+        state.setState("inbox", "scrollOffset", 0);
+      });
+      return;
+    }
+    if (key.name === "space") {
+      batch(() => {
+        state.setState("inbox", "searchQuery", state.state.inbox.searchQuery + " ");
+        state.setState("inbox", "cursor", 0);
+        state.setState("inbox", "scrollOffset", 0);
+      });
+      return;
+    }
+    if (key.name.length === 1 && !key.ctrl && !key.meta) {
+      batch(() => {
+        state.setState("inbox", "searchQuery", state.state.inbox.searchQuery + key.name);
+        state.setState("inbox", "cursor", 0);
+        state.setState("inbox", "scrollOffset", 0);
+      });
+      return;
+    }
+    return;
+  }
+
+  switch (key.name) {
+    case "/": {
+      batch(() => {
+        state.setState("inbox", "searchMode", true);
+        state.setState("inbox", "cursor", 0);
+        state.setState("inbox", "scrollOffset", 0);
+      });
+      void loadSearchEntries(state, baseInboxDir);
+      return;
+    }
+    case "n": {
+      if (!key.ctrl && !key.meta) {
+        batch(() => {
+          state.setState("inbox", "inputMode", "create-folder");
+          state.setState("inbox", "inputQuery", "");
+        });
+      }
+      return;
+    }
+    case "r": {
+      if (!key.ctrl && !key.meta && files.length > 0) {
+        const selected = files[cursor];
+        if (selected && selected.name !== "..") {
+          batch(() => {
+            state.setState("inbox", "inputMode", "rename");
+            state.setState("inbox", "inputQuery", selected.name);
+          });
+        } else {
+          state.setState("error", "Cannot rename parent directory link.");
+        }
+      }
+      return;
+    }
+    case "down":
+    case "j": {
+      if (cursor < files.length - 1) {
+        const next = cursor + 1;
+        state.setState("inbox", "cursor", next);
+        if (next >= offset + listHeight) {
+          state.setState("inbox", "scrollOffset", next - listHeight + 1);
+        }
+      }
+      return;
+    }
+    case "up":
+    case "k": {
+      if (cursor > 0) {
+        const prev = cursor - 1;
+        state.setState("inbox", "cursor", prev);
+        if (prev < offset) {
+          state.setState("inbox", "scrollOffset", prev);
+        }
+      }
+      return;
+    }
+    case "pagedown": {
+      const next = Math.min(cursor + listHeight, files.length - 1);
+      state.setState("inbox", "cursor", next);
+      state.setState("inbox", "scrollOffset", Math.min(next, Math.max(0, files.length - listHeight)));
+      return;
+    }
+    case "pageup": {
+      const prev = Math.max(cursor - listHeight, 0);
+      state.setState("inbox", "cursor", prev);
+      state.setState("inbox", "scrollOffset", prev);
+      return;
+    }
+    case "c": {
+      if (files.length > 0 && !key.ctrl && !key.meta) {
+        const selected = files[cursor];
+        if (!selected.isDirectory) {
+          try {
+            const content = await readFile(selected.path, "utf8");
+            await copyToClipboard(content);
+            state.setState("error", "Copied to clipboard!");
+          } catch (err: any) {
+            state.setState("error", err.message);
+          }
+        } else {
+          state.setState("error", "Cannot copy a directory.");
+        }
+      }
+      return;
+    }
+    case "d": {
+      if (files.length > 0 && !key.ctrl && !key.meta) {
+        const selected = files[cursor];
+        if (selected.name === "..") {
+          state.setState("error", "Cannot delete parent directory link.");
+        } else {
+          batch(() => {
+            state.setState("inbox", "deleteConfirm", selected);
+            state.setState("error", null);
+          });
+        }
+      }
+      return;
+    }
+    case "enter": {
+      if (files.length === 0) return;
+      const selected = files[cursor];
+      if (!selected) return;
+      if (selected.isDirectory) {
+        if (selected.name === "..") {
+          const current = state.state.inbox.directory;
+          const parent = path.dirname(current);
+          state.setState("inbox", "directory", parent === "." || current === parent ? "" : parent);
+        } else {
+          const targetPath = path.join(state.state.inbox.directory, selected.name);
+          state.setState("inbox", "directory", targetPath);
+        }
+        state.setState("inbox", "cursor", 0);
+      } else {
+        await openEditorFile(state, selected.path);
+      }
+      return;
+    }
+    case "ctrl+c":
+    case "q":
+    case "escape": {
+      state.setState("running", false);
+      return;
+    }
+  }
+}
+
+async function openEditorFile(state: TuiState, filepath: string): Promise<void> {
   try {
     const content = await readFile(filepath, "utf8");
     batch(() => {
-      state.setCurrentFile(filepath);
-      state.setFileContent(content);
-      state.setEditorCursorLine(0);
-      state.setEditorCursorCol(0);
-      state.setEditorSaveState("clean");
+      state.setState("editor", "file", filepath);
+      state.setState("editor", "content", content);
+      state.setState("editor", "cursorLine", 0);
+      state.setState("editor", "cursorCol", 0);
+      state.setState("editor", "saveState", "clean");
+      state.setState("screen", "editor");
     });
+    editorSaveAPI?.resetBaseline();
   } catch (err) {
-    state.setError(err instanceof Error ? err.message : String(err));
+    state.setState("error", err instanceof Error ? err.message : String(err));
   }
 }
 
-function waitForEditor(state: TuiState, filepath: string): Promise<void> {
-  return new Promise((resolve) => {
-    let saveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastSavedContent = state.fileContent();
-    let saving = false;
+// ── Editor ────────────────────────────────────────────────────────────────
 
-    const flushSave = async (forceSnapshot = false) => {
-      if (saving) return;
-      saving = true;
+async function handleEditorKey(key: KeyEvent, state: TuiState): Promise<void> {
+  const filepath = state.state.editor.file;
+  if (!filepath || !editorSaveAPI) return;
+
+  switch (key.name) {
+    case "escape": {
+      editorSaveAPI.cancelPending();
+      await editorSaveAPI.save(false);
+      state.setState("screen", "inbox");
+      return;
+    }
+    case "ctrl+s": {
+      editorSaveAPI.cancelPending();
+      state.setState("editor", "saveState", "saving");
+      await editorSaveAPI.save(true);
+      state.setState("error", "Saved.");
+      return;
+    }
+    case "ctrl+c": {
       try {
-        const content = state.fileContent();
-        if (content === lastSavedContent) {
-          batch(() => state.setEditorSaveState("clean"));
-          return;
-        }
-
-        const previousContent = await readFile(filepath, "utf8").catch(() => null);
-        if (previousContent !== null && previousContent !== content && (forceSnapshot || lastSavedContent !== "")) {
-          await recordPromptRevision(filepath, previousContent);
-        }
-
-        batch(() => state.setEditorSaveState("saving"));
-        await atomicWriteFile(filepath, content);
-        lastSavedContent = content;
-        batch(() => state.setEditorSaveState("clean"));
+        await copyToClipboard(state.state.editor.content);
+        state.setState("error", "Copied to clipboard!");
       } catch (err: any) {
-        state.setEditorSaveState("error");
-        state.setError(err.message);
-      } finally {
-        saving = false;
+        state.setState("error", err.message);
       }
-    };
-
-    const scheduleSave = () => {
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => {
-        saveTimer = null;
-        void flushSave(false);
-      }, 1200);
-    };
-
-    const cancelSaveTimer = () => {
-      if (saveTimer) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-      }
-    };
-
-    const openLatestDiff = async () => {
+      return;
+    }
+    case "ctrl+r": {
+      editorSaveAPI.cancelPending();
       try {
-        cancelSaveTimer();
         const latest = await readLatestPromptRevision(filepath);
         if (!latest) {
-          state.setError("No revisions saved yet.");
+          state.setState("error", "No revisions saved yet.");
           return;
         }
-        const resumeEditor = activeKeyResolver;
         batch(() => {
-          state.setDiffOldContent(latest.content);
-          state.setDiffNewContent(state.fileContent());
-          state.setDiffRevisionPath(latest.path);
-          state.setScreen("diff");
+          state.setState("diff", "oldContent", latest.content);
+          state.setState("diff", "newContent", state.state.editor.content);
+          state.setState("diff", "revisionPath", latest.path);
+          state.setState("screen", "diff");
         });
-        await waitForDiff(state);
-        state.setScreen("editor");
-        activeKeyResolver = resumeEditor;
       } catch (err: any) {
-        state.setError(err.message);
+        state.setState("error", err.message);
       }
-    };
-
-    const openRevisionBrowser = async () => {
-      try {
-        cancelSaveTimer();
-        const revisions = await listPromptRevisions(filepath);
-        const resumeEditor = activeKeyResolver;
-        batch(() => {
-          state.setRevisionFiles(revisions);
-          state.setRevisionCursor(0);
-          state.setRevisionScrollOffset(0);
-          state.setScreen("revisions");
-        });
-        await waitForRevisions(state, filepath);
-        state.setScreen("editor");
-        activeKeyResolver = resumeEditor;
-      } catch (err: any) {
-        state.setError(err.message);
-      }
-    };
-
-    activeKeyResolver = async (key: KeyEvent) => {
-      let content = state.fileContent();
-      let lines = content.split('\n');
-      let cLine = state.editorCursorLine();
-      let cCol = state.editorCursorCol();
-
-      let needsSave = false;
-
-      if (isHelpHotkey(key)) {
-        await openHelpScreen(state);
-        return;
-      }
-
-      switch (key.name) {
-        case "escape": {
-          cancelSaveTimer();
-          await flushSave(false);
-          activeKeyResolver = null;
-          resolve();
-          return;
-        }
-        case "up": {
-          if (cLine > 0) {
-            cLine--;
-            cCol = Math.min(cCol, (lines[cLine] || "").length);
-          }
-          break;
-        }
-        case "down": {
-          if (cLine < lines.length - 1) {
-            cLine++;
-            cCol = Math.min(cCol, (lines[cLine] || "").length);
-          }
-          break;
-        }
-        case "pagedown": {
-          const listHeight = Math.max(state.rows() - 4, 5);
-          cLine = Math.min(cLine + listHeight, lines.length - 1);
-          cCol = Math.min(cCol, (lines[cLine] || "").length);
-          break;
-        }
-        case "pageup": {
-          const listHeight = Math.max(state.rows() - 4, 5);
-          cLine = Math.max(cLine - listHeight, 0);
-          cCol = Math.min(cCol, (lines[cLine] || "").length);
-          break;
-        }
-        case "ctrl+d": {
-           const listHeight = Math.max(Math.floor((state.rows() - 4) / 2), 1);
-           cLine = Math.min(cLine + listHeight, lines.length - 1);
-           cCol = Math.min(cCol, (lines[cLine] || "").length);
-           break;
-        }
-        case "ctrl+u": {
-           const listHeight = Math.max(Math.floor((state.rows() - 4) / 2), 1);
-           cLine = Math.max(cLine - listHeight, 0);
-           cCol = Math.min(cCol, (lines[cLine] || "").length);
-           break;
-        }
-        case "ctrl+c": {
-           try {
-              await copyToClipboard(state.fileContent());
-              state.setError("Copied to clipboard!");
-           } catch (err: any) {
-              state.setError(err.message);
-           }
-           break;
-        }
-        case "ctrl+s": {
-           cancelSaveTimer();
-           state.setEditorSaveState("saving");
-           await flushSave(true);
-           state.setError("Saved.");
-           break;
-        }
-        case "ctrl+r": {
-           await openLatestDiff();
-           break;
-        }
-        case "ctrl+p": {
-           await openRevisionBrowser();
-           break;
-        }
-        case "left": {
-          if (cCol > 0) {
-            cCol--;
-          } else if (cLine > 0) {
-            cLine--;
-            cCol = (lines[cLine] || "").length;
-          }
-          break;
-        }
-        case "right": {
-          if (cCol < (lines[cLine] || "").length) {
-            cCol++;
-          } else if (cLine < lines.length - 1) {
-            cLine++;
-            cCol = 0;
-          }
-          break;
-        }
-        case "backspace": {
-          if (cCol > 0) {
-            const line = lines[cLine];
-            lines[cLine] = line.slice(0, cCol - 1) + line.slice(cCol);
-            cCol--;
-            needsSave = true;
-          } else if (cLine > 0) {
-            const prevLineLength = lines[cLine - 1].length;
-            lines[cLine - 1] += lines[cLine];
-            lines.splice(cLine, 1);
-            cLine--;
-            cCol = prevLineLength;
-            needsSave = true;
-          }
-          break;
-        }
-        case "enter": {
-          const line = lines[cLine];
-          const before = line.slice(0, cCol);
-          const after = line.slice(cCol);
-          lines[cLine] = before;
-          lines.splice(cLine + 1, 0, after);
-          cLine++;
-          cCol = 0;
-          needsSave = true;
-          break;
-        }
-        default: {
-          if (key.name.length === 1 && !key.ctrl && !key.meta) {
-            const char = key.shift ? key.name.toUpperCase() : key.name;
-            const line = lines[cLine] || "";
-            lines[cLine] = line.slice(0, cCol) + char + line.slice(cCol);
-            cCol++;
-            needsSave = true;
-          } else if (key.name === "space") {
-            const line = lines[cLine] || "";
-            lines[cLine] = line.slice(0, cCol) + " " + line.slice(cCol);
-            cCol++;
-            needsSave = true;
-          }
-          break;
-        }
-      }
-
-      if (key.name === "s" && key.ctrl) {
-        content = lines.join('\n');
-        state.setFileContent(content);
-        cancelSaveTimer();
-        state.setEditorSaveState("saving");
-        await flushSave(true);
-        state.setError("Saved.");
-      }
-
-      batch(() => {
-        state.setFileContent(lines.join('\n'));
-        state.setEditorCursorLine(cLine);
-        state.setEditorCursorCol(cCol);
-      });
-
-      if (needsSave) {
-        state.setEditorSaveState("dirty");
-        scheduleSave();
-      }
-    };
-    });
+      return;
     }
-
-function waitForDiff(state: TuiState): Promise<void> {
-  return new Promise((resolve) => {
-    activeKeyResolver = async (key: KeyEvent) => {
-      if (isHelpHotkey(key)) {
-        await openHelpScreen(state);
-        return;
+    case "ctrl+p": {
+      editorSaveAPI.cancelPending();
+      try {
+        const revisions = await listPromptRevisions(filepath);
+        batch(() => {
+          state.setState("revisions", "files", revisions);
+          state.setState("revisions", "cursor", 0);
+          state.setState("revisions", "scrollOffset", 0);
+          state.setState("screen", "revisions");
+        });
+      } catch (err: any) {
+        state.setState("error", err.message);
       }
+      return;
+    }
+  }
 
-      switch (key.name) {
-        case "escape":
-        case "ctrl+r": {
-          activeKeyResolver = null;
-          resolve();
-          return;
+  // Editing keys
+  applyEditorEdit(state, key);
+}
+
+function applyEditorEdit(state: TuiState, key: KeyEvent): void {
+  const content = state.state.editor.content;
+  let lines = content.split('\n');
+  let cLine = state.state.editor.cursorLine;
+  let cCol = state.state.editor.cursorCol;
+  let needsSave = false;
+
+  switch (key.name) {
+    case "up": {
+      if (cLine > 0) {
+        cLine--;
+        cCol = Math.min(cCol, (lines[cLine] || "").length);
+      }
+      break;
+    }
+    case "down": {
+      if (cLine < lines.length - 1) {
+        cLine++;
+        cCol = Math.min(cCol, (lines[cLine] || "").length);
+      }
+      break;
+    }
+    case "pagedown": {
+      const listHeight = Math.max(state.state.terminal.rows - 4, 5);
+      cLine = Math.min(cLine + listHeight, lines.length - 1);
+      cCol = Math.min(cCol, (lines[cLine] || "").length);
+      break;
+    }
+    case "pageup": {
+      const listHeight = Math.max(state.state.terminal.rows - 4, 5);
+      cLine = Math.max(cLine - listHeight, 0);
+      cCol = Math.min(cCol, (lines[cLine] || "").length);
+      break;
+    }
+    case "ctrl+d": {
+      const listHeight = Math.max(Math.floor((state.state.terminal.rows - 4) / 2), 1);
+      cLine = Math.min(cLine + listHeight, lines.length - 1);
+      cCol = Math.min(cCol, (lines[cLine] || "").length);
+      break;
+    }
+    case "ctrl+u": {
+      const listHeight = Math.max(Math.floor((state.state.terminal.rows - 4) / 2), 1);
+      cLine = Math.max(cLine - listHeight, 0);
+      cCol = Math.min(cCol, (lines[cLine] || "").length);
+      break;
+    }
+    case "left": {
+      if (cCol > 0) {
+        cCol--;
+      } else if (cLine > 0) {
+        cLine--;
+        cCol = (lines[cLine] || "").length;
+      }
+      break;
+    }
+    case "right": {
+      if (cCol < (lines[cLine] || "").length) {
+        cCol++;
+      } else if (cLine < lines.length - 1) {
+        cLine++;
+        cCol = 0;
+      }
+      break;
+    }
+    case "backspace": {
+      if (cCol > 0) {
+        const line = lines[cLine];
+        lines[cLine] = line.slice(0, cCol - 1) + line.slice(cCol);
+        cCol--;
+        needsSave = true;
+      } else if (cLine > 0) {
+        const prevLineLength = lines[cLine - 1].length;
+        lines[cLine - 1] += lines[cLine];
+        lines.splice(cLine, 1);
+        cLine--;
+        cCol = prevLineLength;
+        needsSave = true;
+      }
+      break;
+    }
+    case "enter": {
+      const line = lines[cLine];
+      const before = line.slice(0, cCol);
+      const after = line.slice(cCol);
+      lines[cLine] = before;
+      lines.splice(cLine + 1, 0, after);
+      cLine++;
+      cCol = 0;
+      needsSave = true;
+      break;
+    }
+    default: {
+      if (key.name.length === 1 && !key.ctrl && !key.meta) {
+        const char = key.shift ? key.name.toUpperCase() : key.name;
+        const line = lines[cLine] || "";
+        lines[cLine] = line.slice(0, cCol) + char + line.slice(cCol);
+        cCol++;
+        needsSave = true;
+      } else if (key.name === "space") {
+        const line = lines[cLine] || "";
+        lines[cLine] = line.slice(0, cCol) + " " + line.slice(cCol);
+        cCol++;
+        needsSave = true;
+      }
+      break;
+    }
+  }
+
+  batch(() => {
+    state.setState("editor", "content", lines.join('\n'));
+    state.setState("editor", "cursorLine", cLine);
+    state.setState("editor", "cursorCol", cCol);
+    if (needsSave) {
+      state.setState("editor", "saveState", "dirty");
+    }
+  });
+}
+
+// ── Diff ──────────────────────────────────────────────────────────────────
+
+function handleDiffKey(key: KeyEvent, state: TuiState): void {
+  if (key.name === "escape" || key.name === "ctrl+r") {
+    state.setState("screen", "editor");
+  }
+}
+
+// ── Revisions ─────────────────────────────────────────────────────────────
+
+async function handleRevisionsKey(key: KeyEvent, state: TuiState): Promise<void> {
+  const revisions = state.state.revisions.files;
+  const cursor = state.state.revisions.cursor;
+  const offset = state.state.revisions.scrollOffset;
+  const listHeight = Math.max(state.state.terminal.rows - 10, 5);
+  const filepath = state.state.editor.file;
+
+  switch (key.name) {
+    case "up":
+    case "k": {
+      if (cursor > 0) {
+        const prev = cursor - 1;
+        state.setState("revisions", "cursor", prev);
+        if (prev < offset) state.setState("revisions", "scrollOffset", prev);
+      }
+      return;
+    }
+    case "down":
+    case "j": {
+      if (cursor < revisions.length - 1) {
+        const next = cursor + 1;
+        state.setState("revisions", "cursor", next);
+        if (next >= offset + listHeight) state.setState("revisions", "scrollOffset", next - listHeight + 1);
+      }
+      return;
+    }
+    case "pageup": {
+      const prev = Math.max(cursor - listHeight, 0);
+      state.setState("revisions", "cursor", prev);
+      state.setState("revisions", "scrollOffset", prev);
+      return;
+    }
+    case "pagedown": {
+      const next = Math.min(cursor + listHeight, revisions.length - 1);
+      state.setState("revisions", "cursor", next);
+      state.setState("revisions", "scrollOffset", Math.min(next, Math.max(0, revisions.length - listHeight)));
+      return;
+    }
+    case "c": {
+      if (revisions.length > 0 && !key.ctrl && !key.meta) {
+        try {
+          await copyToClipboard(revisions[cursor].content);
+          state.setState("error", "Revision copied to clipboard!");
+        } catch (err: any) {
+          state.setState("error", err.message);
         }
       }
-    };
-  });
-}
-
-async function openRevisionPreview(
-  state: TuiState,
-  revision: { path: string; content: string },
-): Promise<"back" | "restore"> {
-  const resumeRevisions = activeKeyResolver;
-  batch(() => {
-    state.setRevisionPreviewPath(revision.path);
-    state.setRevisionPreviewContent(revision.content);
-    state.setScreen("revision-preview");
-  });
-
-  const result = await waitForRevisionPreview(state, revision);
-  if (result === "back") {
-    batch(() => {
-      state.setScreen("revisions");
-    });
-    activeKeyResolver = resumeRevisions;
+      return;
+    }
+    case "v": {
+      if (revisions.length > 0 && !key.ctrl && !key.meta && filepath) {
+        await saveRevisionAsVariant(state, filepath, revisions[cursor].content);
+      }
+      return;
+    }
+    case "enter": {
+      if (revisions.length > 0) {
+        const selected = revisions[cursor];
+        batch(() => {
+          state.setState("revisions", "previewPath", selected.path);
+          state.setState("revisions", "previewContent", selected.content);
+          state.setState("screen", "revision-preview");
+        });
+      }
+      return;
+    }
+    case "escape": {
+      state.setState("screen", "editor");
+      return;
+    }
   }
-  return result;
-}
-
-async function openHelpScreen(state: TuiState): Promise<void> {
-  const resumeResolver = activeKeyResolver;
-  const resumeScreen = state.screen();
-
-  batch(() => {
-    state.setScreen("help");
-  });
-
-  await waitForHelp(state);
-
-  batch(() => {
-    state.setScreen(resumeScreen);
-  });
-  activeKeyResolver = resumeResolver;
 }
 
 async function saveRevisionAsVariant(state: TuiState, originalPath: string, content: string) {
@@ -815,181 +826,71 @@ async function saveRevisionAsVariant(state: TuiState, originalPath: string, cont
     const dir = path.dirname(originalPath);
     const parsed = parsePromptDocument(content);
     const baseTitle = parsed.metadata.title || path.basename(originalPath, ".md");
-    
+
     let version = 1;
     let newPath = "";
     while (true) {
       const filename = `${sanitizePromptTitle(baseTitle)}-variant-${version}.md`;
       newPath = path.join(dir, filename);
-      const exists = await import("node:fs/promises").then(fs => fs.stat(newPath).then(() => true).catch(() => false));
+      const exists = await stat(newPath).then(() => true).catch(() => false);
       if (!exists) break;
       version++;
     }
 
     await atomicWriteFile(newPath, content);
-    state.setError(`Saved variant: ${path.basename(newPath)}`);
+    state.setState("error", `Saved variant: ${path.basename(newPath)}`);
   } catch (err: any) {
-    state.setError(`Failed to save variant: ${err.message}`);
+    state.setState("error", `Failed to save variant: ${err.message}`);
   }
 }
 
-function waitForRevisions(state: TuiState, filepath: string): Promise<void> {
-  return new Promise((resolve) => {
-    activeKeyResolver = async (key: KeyEvent) => {
-      if (isHelpHotkey(key)) {
-        await openHelpScreen(state);
-        return;
+// ── Revision preview ──────────────────────────────────────────────────────
+
+async function handleRevisionPreviewKey(key: KeyEvent, state: TuiState): Promise<void> {
+  const previewContent = state.state.revisions.previewContent;
+
+  switch (key.name) {
+    case "r": {
+      if (!key.ctrl && !key.meta) {
+        const currentPath = state.state.editor.file;
+        const currentContent = state.state.editor.content;
+        if (currentPath) {
+          await recordPromptRevision(currentPath, currentContent);
+        }
+        batch(() => {
+          state.setState("editor", "content", previewContent);
+          state.setState("editor", "cursorLine", 0);
+          state.setState("editor", "cursorCol", 0);
+          state.setState("editor", "saveState", "dirty");
+          state.setState("screen", "editor");
+        });
+        state.setState("error", "Revision restored into editor.");
       }
-
-      const revisions = state.revisionFiles();
-      const cursor = state.revisionCursor();
-      const offset = state.revisionScrollOffset();
-      const listHeight = Math.max(state.rows() - 10, 5);
-
-      switch (key.name) {
-        case "up":
-        case "k": {
-          if (cursor > 0) {
-            const prev = cursor - 1;
-            state.setRevisionCursor(prev);
-            if (prev < offset) state.setRevisionScrollOffset(prev);
-          }
-          break;
-        }
-        case "down":
-        case "j": {
-          if (cursor < revisions.length - 1) {
-            const next = cursor + 1;
-            state.setRevisionCursor(next);
-            if (next >= offset + listHeight) state.setRevisionScrollOffset(next - listHeight + 1);
-          }
-          break;
-        }
-        case "pageup": {
-          const prev = Math.max(cursor - listHeight, 0);
-          state.setRevisionCursor(prev);
-          state.setRevisionScrollOffset(prev);
-          break;
-        }
-        case "pagedown": {
-          const next = Math.min(cursor + listHeight, revisions.length - 1);
-          state.setRevisionCursor(next);
-          state.setRevisionScrollOffset(Math.min(next, Math.max(0, revisions.length - listHeight)));
-          break;
-        }
-        case "c": {
-          if (revisions.length > 0 && !key.ctrl && !key.meta) {
-            try {
-              await copyToClipboard(revisions[cursor].content);
-              state.setError("Revision copied to clipboard!");
-            } catch (err: any) {
-              state.setError(err.message);
-            }
-          }
-          break;
-        }
-        case "v": {
-          if (revisions.length > 0 && !key.ctrl && !key.meta) {
-            await saveRevisionAsVariant(state, filepath, revisions[cursor].content);
-          }
-          break;
-        }
-        case "enter": {
-          if (revisions.length > 0) {
-            const selected = revisions[cursor];
-            const result = await openRevisionPreview(state, selected);
-            if (result === "restore") {
-              activeKeyResolver = null;
-              resolve();
-            }
-            return;
-          }
-          break;
-        }
-        case "escape": {
-          activeKeyResolver = null;
-          resolve();
-          return;
+      return;
+    }
+    case "c": {
+      if (!key.ctrl && !key.meta) {
+        try {
+          await copyToClipboard(previewContent);
+          state.setState("error", "Revision copied to clipboard.");
+        } catch (err: any) {
+          state.setState("error", err.message);
         }
       }
-    };
-  });
-}
-
-function isHelpHotkey(key: KeyEvent): boolean {
-  return key.name === "ctrl+/" || key.name === "/" && key.shift && !key.ctrl && !key.meta;
-}
-
-function waitForRevisionPreview(
-  state: TuiState,
-  revision: { path: string; content: string },
-): Promise<"back" | "restore"> {
-  return new Promise((resolve) => {
-    activeKeyResolver = async (key: KeyEvent) => {
-      if (isHelpHotkey(key)) {
-        await openHelpScreen(state);
-        return;
-      }
-
-      switch (key.name) {
-        case "r": {
-          if (!key.ctrl && !key.meta) {
-            const currentPath = state.currentFile();
-            const currentContent = state.fileContent();
-            if (currentPath) {
-              await recordPromptRevision(currentPath, currentContent);
-            }
-
-            batch(() => {
-              state.setFileContent(revision.content);
-              state.setEditorCursorLine(0);
-              state.setEditorCursorCol(0);
-              state.setEditorSaveState("dirty");
-              state.setScreen("editor");
-            });
-            state.setError("Revision restored into editor.");
-            activeKeyResolver = null;
-            resolve("restore");
-          }
-          return;
-        }
-        case "c": {
-          if (!key.ctrl && !key.meta) {
-            try {
-              await copyToClipboard(revision.content);
-              state.setError("Revision copied to clipboard.");
-            } catch (err: any) {
-              state.setError(err.message);
-            }
-          }
-          return;
-        }
-        case "v": {
-          if (!key.ctrl && !key.meta) {
-            const currentPath = state.currentFile();
-            if (currentPath) {
-              await saveRevisionAsVariant(state, currentPath, revision.content);
-            }
-          }
-          return;
-        }
-        case "escape": {
-          activeKeyResolver = null;
-          resolve("back");
-          return;
+      return;
+    }
+    case "v": {
+      if (!key.ctrl && !key.meta) {
+        const currentPath = state.state.editor.file;
+        if (currentPath) {
+          await saveRevisionAsVariant(state, currentPath, previewContent);
         }
       }
-    };
-  });
-}
-
-function waitForHelp(_state: TuiState): Promise<void> {
-  return new Promise((resolve) => {
-    activeKeyResolver = async (key: KeyEvent) => {
-      if (isHelpHotkey(key) || key.name === "escape" || key.name === "enter") {
-        activeKeyResolver = null;
-        resolve();
-      }
-    };
-  });
+      return;
+    }
+    case "escape": {
+      state.setState("screen", "revisions");
+      return;
+    }
+  }
 }

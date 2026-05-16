@@ -36,48 +36,53 @@ export function createRenderer(state: TuiState): void {
   }
 
   createEffect(() => {
-    const cols = state.columns();
-    const rows = state.rows();
+    const cols = state.state.terminal.columns;
+    const rows = state.state.terminal.rows;
 
-    let lines = buildLines(state, cols, rows);
+    const { lines, cursor: viewCursor } = buildLines(state, cols, rows);
 
-    while (lines.length < rows) {
-      lines.push("");
+    const displayLines = [...lines];
+    while (displayLines.length < rows) {
+      displayLines.push("");
     }
-    if (lines.length > rows) {
-      lines.length = rows;
+    if (displayLines.length > rows) {
+      displayLines.length = rows;
     }
 
-    const frame = `\x1b[H${lines.map((line) => line + "\x1b[K").join("\n")}`;
+    let frame = `\x1b[H${displayLines.map((line) => line + "\x1b[K").join("\n")}`;
+    
+    if (viewCursor) {
+      // Append move cursor and show cursor to the same frame write
+      frame += `\x1b[${viewCursor.row + 1};${viewCursor.col + 1}H\x1b[?25h`;
+    } else {
+      frame += `\x1b[?25l`; // Hide cursor if not specified
+    }
+
     scheduleWrite(frame);
   });
 
-  if (firstFrame) {
-    const cols = state.columns();
-    const rows = state.rows();
-    let lines = buildLines(state, cols, rows);
-    while (lines.length < rows) lines.push("");
-    if (lines.length > rows) lines.length = rows;
-    firstFrame = false;
-    write(`\x1b[H${lines.map((line) => line + "\x1b[K").join("\n")}`);
-  }
 }
 
-function buildLines(state: TuiState, cols: number, rows: number): string[] {
-  const currentScreen = state.screen();
+interface RenderResult {
+  lines: string[];
+  cursor?: { row: number; col: number } | null;
+}
+
+function buildLines(state: TuiState, cols: number, rows: number): RenderResult {
+  const currentScreen = state.state.screen;
 
   if (currentScreen === "inbox") {
-    return renderInbox(state, cols, rows);
+    return { lines: renderInbox(state, cols, rows) };
   } else if (currentScreen === "editor") {
     return renderEditor(state, cols, rows);
   } else if (currentScreen === "diff") {
-    return renderDiff(state, cols, rows);
+    return { lines: renderDiff(state, cols, rows) };
   } else if (currentScreen === "revisions") {
-    return renderRevisions(state, cols, rows);
+    return { lines: renderRevisions(state, cols, rows) };
   } else if (currentScreen === "revision-preview") {
-    return renderRevisionPreview(state, cols, rows);
+    return { lines: renderRevisionPreview(state, cols, rows) };
   } else if (currentScreen === "help") {
-    return renderHelp(state, cols, rows);
+    return { lines: renderHelp(state, cols, rows) };
   }
-  return ["Unknown screen"];
+  return { lines: ["Unknown screen"] };
 }

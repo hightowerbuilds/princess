@@ -1,20 +1,19 @@
 import type { TuiState } from "../state.ts";
 import { dim, bgGray, white, black, cyan, green, yellow } from "../colors.ts";
-import { prepare, layout, materializeToStrings } from "../typeset.ts";
+import { prepare, layout, materializeToStrings, stringWidth } from "../typeset.ts";
 import { box } from "../typeset-compose.ts";
 import { dropShadow } from "../aesthetics.ts";
 import path from "node:path";
-import { parsePromptDocument } from "../../prompts.ts";
 
-export function renderEditor(state: TuiState, cols: number, rows: number): string[] {
-  const currentFile = state.currentFile();
-  const content = state.fileContent();
-  const cLine = state.editorCursorLine();
-  const cCol = state.editorCursorCol();
-  const saveState = state.editorSaveState();
+export function renderEditor(state: TuiState, cols: number, rows: number): { lines: string[], cursor?: { row: number, col: number } | null } {
+  const currentFile = state.state.editor.file;
+  const content = state.state.editor.content;
+  const cLine = state.state.editor.cursorLine;
+  const cCol = state.state.editor.cursorCol;
+  const saveState = state.state.editor.saveState;
 
   const filename = currentFile ? path.basename(currentFile) : "Untitled";
-  const parsed = parsePromptDocument(content);
+  const parsed = state.editorParsedPrompt();
 
   // ── Header Card ────────────────────────────────────────────────────────
   const headerLines: string[] = [];
@@ -40,16 +39,17 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
     contentStyle: (s) => bgGray(white(s))
   });
 
-  // ── Body Card ──────────────────────────────────────────────────────────
+  const headerCardWithShadow = dropShadow(headerCard, cols - 1);
+  const headerHeight = headerCardWithShadow.length;
+
+  // ── Body Card Content ──────────────────────────────────────────────────
   const contentLines = content.split('\n');
-  // Box has 2 borders + 2 padding = 4 columns overhead
-  // Prefix has 4 (line num) + 3 (pipe) = 7 columns overhead
-  // Shadow has 1 column overhead
-  const maxLen = Math.max(10, cols - 4 - 7 - 4 - 1); 
+  const maxLen = Math.max(10, cols - 4 - 1); // -2 borders, -2 padding, -1 shadow
   
   interface VisualLine {
     text: string;
     isCursor: boolean;
+    cursorCol?: number;
   }
   
   const visualBuffer: VisualLine[] = [];
@@ -62,9 +62,9 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
     if (lineStr.length === 0) {
       if (isCursorLine) {
         cursorVisualIdx = visualBuffer.length;
-        visualBuffer.push({ text: `${dim((i + 1).toString().padStart(4))} │ ${bgGray(white(" "))}`, isCursor: true });
+        visualBuffer.push({ text: " ", isCursor: true, cursorCol: 0 });
       } else {
-        visualBuffer.push({ text: `${dim((i + 1).toString().padStart(4))} │ `, isCursor: false });
+        visualBuffer.push({ text: "", isCursor: false });
       }
       continue;
     }
@@ -87,7 +87,8 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
         before = before.slice(0, -1);
       }
 
-      const markedText = before + bgGray(white(at)) + "\u200B" + after;
+      // Marker to find the cursor position in the laid-out chunks
+      const markedText = before + "\u200B" + after;
       const p = prepare(markedText, { whiteSpace: "pre-wrap", wordBreak: "break-all" });
       chunks = materializeToStrings(p, layout(p, maxLen));
     }
@@ -96,21 +97,24 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
 
     for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
       const chunk = chunks[chunkIdx];
-      const prefix = chunkIdx === 0 ? `${dim((i + 1).toString().padStart(4))} │ ` : `${dim("   ... │ ")}`;
       
       if (isCursorLine && chunk.includes("\u200B")) {
         cursorVisualIdx = visualBuffer.length;
-        visualBuffer.push({ text: `${prefix}${chunk.replace("\u200B", "")}`, isCursor: true });
+        const cleaned = chunk.replace("\u200B", "");
+        const cursorMarkerIdx = chunk.indexOf("\u200B");
+        const textBeforeCursor = chunk.slice(0, cursorMarkerIdx);
+        const visualCol = stringWidth(textBeforeCursor);
+
+        visualBuffer.push({ text: cleaned, isCursor: true, cursorCol: visualCol });
       } else {
-        visualBuffer.push({ text: `${prefix}${chunk}`, isCursor: false });
+        visualBuffer.push({ text: chunk, isCursor: false });
       }
     }
   }
 
-  // Calculate view port
+  // Viewport calculation
   const footerHeight = 2;
-  const headerHeight = headerCard.length + 1; // +1 for header shadow
-  const editorHeight = rows - headerHeight - footerHeight - 3; // -2 for borders, -1 for shadow
+  const editorHeight = rows - headerHeight - footerHeight - 3; // -2 borders, -1 shadow
   
   let startIdx = Math.max(0, cursorVisualIdx - Math.floor(editorHeight / 2));
   let endIdx = Math.min(visualBuffer.length, startIdx + editorHeight);
@@ -121,12 +125,12 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
 
   const visibleBodyLines: string[] = [];
   for (let i = startIdx; i < endIdx; i++) {
-    visibleBodyLines.push(visualBuffer[i].text);
+    visibleBodyLines.push(visibleBodyLines.length === (cursorVisualIdx - startIdx) ? 
+        bgGray(white(visualBuffer[i].text)) : visualBuffer[i].text);
   }
 
-  // Pad remaining height
   while (visibleBodyLines.length < editorHeight) {
-    visibleBodyLines.push(`${dim("   ~ │")}`);
+    visibleBodyLines.push("");
   }
 
   const bodyCard = box(visibleBodyLines, cols - 1, {
@@ -135,12 +139,27 @@ export function renderEditor(state: TuiState, cols: number, rows: number): strin
     borderColor: white,
     contentStyle: (s) => bgGray(white(s))
   });
+  const bodyCardWithShadow = dropShadow(bodyCard, cols - 1);
+
+  // Precise hardware cursor calculation based on built array
+  let hardwareCursor: { row: number, col: number } | null = null;
+  const cursorVisualRow = cursorVisualIdx - startIdx;
+  
+  if (cursorVisualRow >= 0 && cursorVisualRow < editorHeight) {
+    const vLine = visualBuffer[cursorVisualIdx];
+    // Index of the line in the final array where content starts
+    // Content starts at headerHeight + 1 (top border)
+    const row = headerHeight + 1 + cursorVisualRow; 
+    // Content starts at visual column 2 (border + padding)
+    const col = 2 + (vLine.cursorCol ?? 0); 
+    hardwareCursor = { row, col };
+  }
 
   const finalLines: string[] = [];
-  finalLines.push(...dropShadow(headerCard, cols - 1));
-  finalLines.push(...dropShadow(bodyCard, cols - 1));
+  finalLines.push(...headerCardWithShadow);
+  finalLines.push(...bodyCardWithShadow);
   finalLines.push("");
   finalLines.push(dim(` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `));
 
-  return finalLines;
+  return { lines: finalLines, cursor: hardwareCursor };
 }

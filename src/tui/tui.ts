@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { createRoot, batch } from "solid-js";
+import { createRoot } from "solid-js";
 import { createTuiState } from "./state.ts";
 import { createRenderer } from "./renderer.ts";
 import {
@@ -54,10 +54,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
     // Wire resize
     const stopResize = onResize((cols, rows) => {
-      batch(() => {
-        state.setColumns(cols);
-        state.setRows(rows);
-      });
+      state.setState("terminal", { columns: cols, rows });
     });
 
     try {

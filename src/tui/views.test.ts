@@ -26,8 +26,7 @@ section("renderInbox");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
+  state.setState("terminal", { columns: 80, rows: 24 });
 
   const content = buildPromptDocument("Inbox Prompt", {
     category: "team/prompts",
@@ -36,7 +35,7 @@ section("renderInbox");
     updatedAt: "2026-05-09T12:00:00.000Z",
   });
 
-  state.setInboxFiles([
+  state.setState("inbox", "files",[
     {
       name: "inbox-prompt.md",
       path: "/tmp/inbox-prompt.md",
@@ -56,11 +55,10 @@ section("renderInbox search");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setInboxSearchQuery("draft");
-  state.setInboxSearchMode(true);
-  state.setInboxFiles([
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("inbox", "searchQuery","draft");
+  state.setState("inbox", "searchMode",true);
+  state.setState("inbox", "files",[
     {
       name: "team-note.md",
       label: "team/notes/team-note.md",
@@ -86,8 +84,7 @@ section("renderInbox empty state");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
+  state.setState("terminal", { columns: 80, rows: 24 });
 
   const lines = renderInbox(state, 80, 24);
   assert(lines.some((line) => line.includes("Welcome to Princess.")), "shows onboarding welcome");
@@ -99,9 +96,8 @@ section("renderInbox delete confirmation");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setInboxDeleteConfirm({
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("inbox", "deleteConfirm",{
     name: "to-delete.md",
     path: "/tmp/to-delete.md",
     isDirectory: false,
@@ -115,8 +111,7 @@ section("renderEditor");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
+  state.setState("terminal", { columns: 80, rows: 24 });
 
   const content = buildPromptDocument("Editor Prompt", {
     category: "design",
@@ -125,12 +120,12 @@ section("renderEditor");
     updatedAt: "2026-05-09T12:00:00.000Z",
   });
 
-  state.setCurrentFile("/tmp/editor-prompt.md");
-  state.setFileContent(content);
-  state.setEditorCursorLine(0);
-  state.setEditorCursorCol(0);
+  state.setState("editor", "file","/tmp/editor-prompt.md");
+  state.setState("editor", "content",content);
+  state.setState("editor", "cursorLine",0);
+  state.setState("editor", "cursorCol",0);
 
-  const lines = renderEditor(state, 80, 24);
+  const { lines } = renderEditor(state, 80, 24);
   assert(lines.some((line) => line.includes("Editor Prompt")), "shows document content");
   assert(lines.some((line) => line.includes("draft")), "shows status metadata");
   assert(lines.some((line) => line.includes("design")), "shows category metadata");
@@ -143,25 +138,23 @@ section("renderEditor dirty state");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setEditorSaveState("dirty");
-  state.setCurrentFile("/tmp/editor-prompt.md");
-  state.setFileContent("draft text\n");
-  const lines = renderEditor(state, 80, 24);
-  assert(lines.some((line) => line.includes("[dirty]")), "shows dirty state");
-}
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "saveState","dirty");
+  state.setState("editor", "file","/tmp/editor-prompt.md");
+  state.setState("editor", "content","draft text\n");
+  const { lines } = renderEditor(state, 80, 24);
+  assert(lines.some((line) => line.includes("[dirty]")), "shows dirty indicator");
+  }
 
 section("renderDiff");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setCurrentFile("/tmp/diff-prompt.md");
-  state.setDiffRevisionPath("/tmp/diff-prompt.md/2026-05-10T00-00-00-000Z.md");
-  state.setDiffOldContent("line one\nold line\nline three\n");
-  state.setDiffNewContent("line one\nnew line\nline three\n");
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "file","/tmp/diff-prompt.md");
+  state.setState("diff", "revisionPath","/tmp/diff-prompt.md/2026-05-10T00-00-00-000Z.md");
+  state.setState("diff", "oldContent","line one\nold line\nline three\n");
+  state.setState("diff", "newContent","line one\nnew line\nline three\n");
 
   const lines = renderDiff(state, 80, 24);
   assert(lines.some((line) => line.includes("- old line")), "shows removed line");
@@ -173,10 +166,9 @@ section("renderRevisions");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setCurrentFile("/tmp/history-prompt.md");
-  state.setRevisionFiles([
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "file","/tmp/history-prompt.md");
+  state.setState("revisions", "files",[
     {
       path: "/tmp/history/2026-05-10T00-00-00-000Z.md",
       createdAt: "2026-05-10T00-00-00-000Z",
@@ -200,10 +192,9 @@ section("renderRevisionPreview");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setRevisionPreviewPath("/tmp/history/2026-05-10T00-00-00-000Z.md");
-  state.setRevisionPreviewContent(
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("revisions", "previewPath","/tmp/history/2026-05-10T00-00-00-000Z.md");
+  state.setState("revisions", "previewContent",
     buildPromptDocument("History Preview", {
       category: "ops",
       status: "ready",
@@ -222,10 +213,9 @@ section("renderHelp");
 
 {
   const state = createTuiState();
-  state.setColumns(80);
-  state.setRows(24);
-  state.setCurrentDirectory("team/prompts");
-  state.setCurrentFile("/tmp/history-prompt.md");
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("inbox", "directory","team/prompts");
+  state.setState("editor", "file","/tmp/history-prompt.md");
 
   const lines = renderHelp(state, 80, 24);
   assert(lines.some((line) => line.includes("Help & Status")), "shows help title");
