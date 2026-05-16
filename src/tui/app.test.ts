@@ -1,11 +1,12 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { createRoot } from "solid-js";
 import { AGENT_LETTER_FILENAME } from "../default-prompts.ts";
 import { filterPromptSearchEntries } from "../prompts.ts";
-import { collectPromptSearchEntries } from "./app.ts";
+import { collectPromptSearchEntries, createEditorSaveLoop, loadInboxFiles } from "./app.ts";
 import { compareInboxEntriesForDisplay } from "../inbox-files.ts";
-import type { InboxEntry } from "./state.ts";
+import { createTuiState, type InboxEntry } from "./state.ts";
 
 let passed = 0;
 let failed = 0;
@@ -170,6 +171,106 @@ try {
       filterPromptSearchEntries("user impact", entries)[0]?.relativePath,
       "showcase/landing-page-build-brief",
       "search matches imported table partial content",
+    );
+  }
+
+  section("editor save loop detects external file changes");
+
+  {
+    const editorDir = path.join(tempRoot, "editor-conflict");
+    await mkdir(editorDir, { recursive: true });
+    const filepath = path.join(editorDir, "prompt.md");
+    await writeFile(filepath, "v1\n", "utf8");
+
+    const state = createTuiState();
+    await new Promise<void>((resolve) => {
+      createRoot(async (dispose) => {
+        const api = createEditorSaveLoop(state);
+        state.setState("editor", "file", filepath);
+        state.setState("editor", "content", "v1\n");
+        await api.resetBaseline();
+
+        const externalContent = "external edit\n";
+        await writeFile(filepath, externalContent, "utf8");
+        const future = (await stat(filepath)).mtimeMs + 5000;
+        await utimes(filepath, future / 1000, future / 1000);
+
+        state.setState("editor", "content", "user edit\n");
+        await api.save(false);
+        assertEq(
+          state.state.editor.saveState,
+          "conflict",
+          "save aborts and flips to conflict when on-disk mtime diverges from baseline",
+        );
+        assertEq(
+          await readFile(filepath, "utf8"),
+          externalContent,
+          "conflicting save does not touch the on-disk file",
+        );
+
+        await api.save(true, true);
+        assertEq(
+          state.state.editor.saveState,
+          "clean",
+          "explicit overwrite save returns to clean state",
+        );
+        assertEq(
+          await readFile(filepath, "utf8"),
+          "user edit\n",
+          "overwrite save writes the user's edit to disk",
+        );
+
+        dispose();
+        resolve();
+      });
+    });
+  }
+
+  section("loadInboxFiles preserves cursor by name on refresh");
+
+  {
+    const inboxDir = path.join(tempRoot, "cursor-preservation");
+    await mkdir(inboxDir, { recursive: true });
+    await writeFile(path.join(inboxDir, "alpha.md"), "a", "utf8");
+    await writeFile(path.join(inboxDir, "bravo.md"), "b", "utf8");
+    await writeFile(path.join(inboxDir, "charlie.md"), "c", "utf8");
+
+    const state = createTuiState();
+    await loadInboxFiles(state, inboxDir, "");
+    assertEq(
+      state.state.inbox.files.map((f) => f.name),
+      ["alpha.md", "bravo.md", "charlie.md"],
+      "initial load lists files in display order",
+    );
+
+    state.setState("inbox", "cursor", 1);
+    assertEq(state.state.inbox.files[state.state.inbox.cursor]?.name, "bravo.md", "cursor starts on bravo.md");
+
+    await writeFile(path.join(inboxDir, "00-prepended.md"), "z", "utf8");
+    await loadInboxFiles(state, inboxDir, "");
+
+    assertEq(
+      state.state.inbox.files.map((f) => f.name),
+      ["00-prepended.md", "alpha.md", "bravo.md", "charlie.md"],
+      "refresh picks up the new file in sorted order",
+    );
+    assertEq(
+      state.state.inbox.files[state.state.inbox.cursor]?.name,
+      "bravo.md",
+      "cursor follows bravo.md to its new index after a prepended file appears",
+    );
+
+    await rm(path.join(inboxDir, "bravo.md"));
+    await loadInboxFiles(state, inboxDir, "");
+    assertEq(
+      state.state.inbox.files.map((f) => f.name),
+      ["00-prepended.md", "alpha.md", "charlie.md"],
+      "refresh drops the externally-deleted file",
+    );
+    assertEq(
+      state.state.inbox.cursor < state.state.inbox.files.length,
+      true,
+      "cursor stays within bounds after the selected file disappears externally",
     );
   }
 } finally {

@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, rm, writeFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, unlink, writeFile, stat } from "node:fs/promises";
 import { withFileLock } from "./file-lock.ts";
 
 let passed = 0;
@@ -121,13 +121,12 @@ try {
   {
     const lockPath = path.join(tempRoot, "timeout.lock");
 
-    const holder = withFileLock(
-      lockPath,
-      async () => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-      },
-      { timeoutMs: 5000 },
-    );
+    const holderPayload = {
+      pid: process.pid,
+      hostname: os.hostname(),
+      acquiredAt: new Date().toISOString(),
+    };
+    await writeFile(lockPath, `${JSON.stringify(holderPayload)}\n`, { flag: "wx" });
 
     let timedOut = false;
     try {
@@ -140,7 +139,7 @@ try {
     }
     assert(timedOut, "second caller throws a timeout error while first holds the lock");
 
-    await holder;
+    await unlink(lockPath);
     const after = await withFileLock(lockPath, async () => "ok", { timeoutMs: 1000 });
     assertEq(after, "ok", "lock recoverable after the holder releases");
   }

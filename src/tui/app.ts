@@ -10,17 +10,26 @@ import { parsePromptDocument, sanitizePromptTitle, type PromptSearchEntry } from
 import { recordPromptRevision, readLatestPromptRevision, listPromptRevisions } from "../revisions.ts";
 import { atomicWriteFile, cleanupTempFiles } from "../storage.ts";
 import { openFileInDefaultBrowser } from "../browser.ts";
-import { EDITOR_BODY_OVERHEAD_ROWS, INBOX_KEY_LIST_OVERHEAD_ROWS, REVISIONS_LIST_OVERHEAD_ROWS, SAVE_DEBOUNCE_MS } from "./constants.ts";
+import { EDITOR_BODY_OVERHEAD_ROWS, INBOX_KEY_LIST_OVERHEAD_ROWS, INBOX_REFRESH_INTERVAL_MS, REVISIONS_LIST_OVERHEAD_ROWS, SAVE_DEBOUNCE_MS } from "./constants.ts";
 import { readHtmlPromptManifest, type HtmlPromptManifest, type HtmlPromptResource } from "../html-prompts.ts";
 import { compareInboxEntriesForDisplay, isImageAssetFile, isTableDataFile, isVisibleInboxFile } from "../inbox-files.ts";
 
 interface EditorSaveAPI {
-  save: (forceSnapshot: boolean) => Promise<void>;
+  save: (forceSnapshot: boolean, overwriteExternal?: boolean) => Promise<void>;
   cancelPending: () => void;
-  resetBaseline: () => void;
+  resetBaseline: () => Promise<void>;
 }
 
 let editorSaveAPI: EditorSaveAPI | null = null;
+
+async function readMtimeMs(filepath: string): Promise<number | null> {
+  try {
+    const s = await stat(filepath);
+    return s.mtimeMs;
+  } catch {
+    return null;
+  }
+}
 
 export function handleKey(key: KeyEvent, state: TuiState): void {
   if (!state.state.running) return;
@@ -78,6 +87,17 @@ export async function runApp(state: TuiState): Promise<void> {
         }
       });
 
+      const refreshInterval = setInterval(() => {
+        if (
+          state.state.screen === "inbox" &&
+          state.state.inbox.inputMode === null &&
+          state.state.inbox.deleteConfirm === null
+        ) {
+          void loadInboxFiles(state, baseInboxDir, state.state.inbox.directory);
+        }
+      }, INBOX_REFRESH_INTERVAL_MS);
+      onCleanup(() => clearInterval(refreshInterval));
+
       createEffect(() => {
         if (!state.state.running) {
           dispose();
@@ -92,8 +112,9 @@ export async function runApp(state: TuiState): Promise<void> {
   editorSaveAPI = null;
 }
 
-function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
+export function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
   let baseline = "";
+  let baselineMtimeMs: number | null = null;
   let currentFile: string | null = null;
   let inFlight: Promise<void> | null = null;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,7 +126,7 @@ function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
     }
   };
 
-  const save = async (forceSnapshot: boolean): Promise<void> => {
+  const save = async (forceSnapshot: boolean, overwriteExternal = false): Promise<void> => {
     while (inFlight) await inFlight;
     const file = currentFile;
     if (!file) return;
@@ -116,6 +137,16 @@ function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
           state.setState("editor", "saveState", "clean");
           return;
         }
+        const onDiskMtime = await readMtimeMs(file);
+        if (
+          !overwriteExternal &&
+          baselineMtimeMs !== null &&
+          onDiskMtime !== null &&
+          onDiskMtime !== baselineMtimeMs
+        ) {
+          state.setState("editor", "saveState", "conflict");
+          return;
+        }
         const previousContent = await readFile(file, "utf8").catch(() => null);
         if (previousContent !== null && previousContent !== content && (forceSnapshot || baseline !== "")) {
           await recordPromptRevision(file, previousContent);
@@ -123,6 +154,7 @@ function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
         state.setState("editor", "saveState", "saving");
         await atomicWriteFile(file, content);
         baseline = content;
+        baselineMtimeMs = await readMtimeMs(file);
         state.setState("editor", "saveState", "clean");
       } catch (err: any) {
         state.setState("editor", "saveState", "error");
@@ -134,16 +166,19 @@ function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
     return inFlight;
   };
 
-  const resetBaseline = () => {
+  const resetBaseline = async () => {
     currentFile = state.state.editor.file;
     baseline = state.state.editor.content;
     cancelPending();
+    baselineMtimeMs = currentFile ? await readMtimeMs(currentFile) : null;
   };
 
   createEffect(() => {
     const screen = state.state.screen;
     const content = state.state.editor.content;
+    const saveState = state.state.editor.saveState;
     if (screen !== "editor") return;
+    if (saveState === "conflict") return;
     if (content === baseline) return;
     pendingTimer = setTimeout(() => {
       pendingTimer = null;
@@ -166,7 +201,7 @@ async function loadSearchEntries(state: TuiState, baseInboxDir: string) {
   }
 }
 
-async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub: string) {
+export async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub: string) {
   try {
     const targetDir = path.join(baseInboxDir, currentSub);
 
@@ -219,11 +254,19 @@ async function loadInboxFiles(state: TuiState, baseInboxDir: string, currentSub:
       });
     }
 
+    const previousName = state.state.inbox.files[state.state.inbox.cursor]?.name ?? null;
+
     batch(() => {
       state.setState("inbox", "files", entriesList);
-      if (state.state.inbox.cursor >= entriesList.length) {
-        state.setState("inbox", "cursor", Math.max(0, entriesList.length - 1));
+      let nextCursor = state.state.inbox.cursor;
+      if (previousName) {
+        const idx = entriesList.findIndex((e) => e.name === previousName);
+        if (idx >= 0) nextCursor = idx;
       }
+      if (nextCursor >= entriesList.length) {
+        nextCursor = Math.max(0, entriesList.length - 1);
+      }
+      state.setState("inbox", "cursor", nextCursor);
       state.setState("inbox", "scrollOffset", Math.min(state.state.inbox.scrollOffset, Math.max(0, entriesList.length - 1)));
     });
   } catch (err) {
@@ -714,7 +757,7 @@ async function openEditorFile(state: TuiState, filepath: string, options: { read
       state.setState("editor", "readOnly", options.readOnly === true);
       state.setState("screen", "editor");
     });
-    editorSaveAPI?.resetBaseline();
+    await editorSaveAPI?.resetBaseline();
   } catch (err) {
     state.setState("error", err instanceof Error ? err.message : String(err));
   }
@@ -762,9 +805,12 @@ async function handleEditorKey(key: KeyEvent, state: TuiState): Promise<void> {
   switch (key.name) {
     case "ctrl+s": {
       editorSaveAPI.cancelPending();
+      const wasConflict = state.state.editor.saveState === "conflict";
       state.setState("editor", "saveState", "saving");
-      await editorSaveAPI.save(true);
-      state.setState("error", "Saved.");
+      await editorSaveAPI.save(true, wasConflict);
+      if (state.state.editor.saveState === "clean") {
+        state.setState("error", wasConflict ? "Overwrote external changes." : "Saved.");
+      }
       return;
     }
     case "ctrl+r": {
@@ -924,7 +970,7 @@ function applyEditorEdit(state: TuiState, key: KeyEvent, options: { readOnly: bo
     }
     state.setState("editor", "cursorLine", cLine);
     state.setState("editor", "cursorCol", cCol);
-    if (needsSave) {
+    if (needsSave && state.state.editor.saveState !== "conflict") {
       state.setState("editor", "saveState", "dirty");
     }
   });

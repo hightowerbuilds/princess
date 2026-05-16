@@ -233,10 +233,39 @@ Considered three approaches: in-process serialization (insufficient — Trial 4 
 - All 13 suites green (was 12; `file-lock` is the new suite). CLI suite unchanged at 68; html-prompts went 58 → 64 with the parallel-write test.
 - **Live smoke reproducing the Trial 4 failure mode:** three real `princess` CLI processes (`add-source`, `add-asset`, `import-table`) launched in parallel against the same workspace via shell `&`. All three reported success; `princess html list --json` showed all three resources; `princess html lint` passed (no `unknown-include`); `.princess.lock` was cleaned up. The exact regression Trial 4 captured is now fixed at the binary level, not just inside the test process.
 
+### S4 landed — TUI external-change awareness
+
+Went straight from S3 into S4 to close out Phase 1 substrate. Picked lazy detection at save time (rather than eager polling of the open file): the conflict only matters at write time anyway, and lazy detection keeps editing flow uninterrupted.
+
+**Editor-side conflict detection:**
+
+- Extended `EditorSaveState` with a `"conflict"` variant.
+- `createEditorSaveLoop` now tracks `baselineMtimeMs` alongside the content baseline. `resetBaseline` is async — it reads the on-disk mtime when a file is opened. After every successful save, the new post-write mtime is captured as the new baseline.
+- `save(forceSnapshot, overwriteExternal = false)` re-stats the file before writing. If on-disk mtime differs from baseline AND `overwriteExternal` is false, it sets `saveState = "conflict"` and aborts without touching disk.
+- Ctrl+S in conflict state calls `save(true, true)` — explicit overwrite. The pre-overwrite read still routes through the normal revision-snapshot path, so **the external version is preserved as a revision** before being overwritten. Status message: `"Overwrote external changes."` Esc in conflict state returns to inbox without auto-saving (discards in-memory edits).
+- The debounced autosave effect short-circuits while `saveState === "conflict"`, so it doesn't ping-pong every 1.2s. The keystroke handler preserves `"conflict"` instead of downgrading to `"dirty"` on typing, so the conflict indicator doesn't flicker.
+- Editor view shows `[external change]` (yellow) in the header and a yellow replacement footer banner: *"File changed on disk.  [Ctrl+S] Overwrite  [Esc] Discard your edits  Ln X, Col Y"*.
+
+**Inbox auto-refresh:**
+
+- `loadInboxFiles` was upgraded to preserve cursor by **name**, not index. Captures the currently-selected entry's name before reloading; after the new list is set, looks up that name in the new entries and moves the cursor to the new index. Falls back to clamping only if the name disappeared.
+- Added a 2-second `setInterval` in `runApp`'s `createRoot` block that re-walks the current inbox directory when (a) screen is `"inbox"`, (b) no input modal is open, and (c) no delete confirmation is pending. Cleaned up via `onCleanup`.
+- New constant `INBOX_REFRESH_INTERVAL_MS = 2000` in `tui/constants.ts`.
+
+**Testability nits along the way:**
+
+- Exported `createEditorSaveLoop` and `loadInboxFiles` from `tui/app.ts` so the new tests can exercise them directly without spinning up `runApp`.
+- The S3 file-lock timeout test was racy at the FS level (both concurrent `withFileLock` calls could win the initial `O_EXCL` write). Replaced the holder with a deterministic pre-existing-lock setup — a manual `writeFile(lockPath, ..., { flag: "wx" })` before the second caller runs. No more race.
+
+### Verification (S4)
+
+- `bunx tsc --noEmit` clean.
+- Full suite green: 13/13. app: 9 → 19 (+10 — two new sections covering the conflict cycle and cursor preservation); views: 41 → 45 (+4 — new `renderEditor conflict state` section); file-lock: 14 (deterministic).
+- The conflict test exercises the real race: write `v1` → open it → externally write `external edit` + bump mtime via `utimes` → user-edit in memory → `save(false)` aborts to `"conflict"` (on-disk still `"external edit"`) → `save(true, true)` overwrites (on-disk now `"user edit"`). All four file-content + state assertions pass.
+- The cursor-preservation test covers prepend (file `00-prepended.md` added → cursor still on `bravo.md` at new index 2) and external delete (selected entry removed → cursor stays in bounds).
+
 ### Roadmap status after today
 
-- Phase 1 Substrate: 3 of 4 done (S1 ✅, S2 ✅, S3 ✅, S4 TUI external-change awareness pending).
-- Phase 2 Browser Bridge: B3 partial (browser-open from yesterday). B1/B2/B4 pending.
+- **Phase 1 Substrate: 4/4 complete.** S1 ✅ S2 ✅ S3 ✅ S4 ✅. The stated Phase 1 goal — making the local file model safe for multiple actors — is met end-to-end: agents can parse `create-prompt` output, listings are stable, concurrent writes can't lose resources, and the TUI doesn't pretend the disk is frozen while it's not.
+- Phase 2 Browser Bridge: B3 partial (browser-open from yesterday). B1 (capture contract) is the natural next item.
 - Phases 3–5 untouched.
-
-S4 (TUI external-change awareness) is the last Phase 1 substrate item.

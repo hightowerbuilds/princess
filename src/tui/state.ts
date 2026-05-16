@@ -6,7 +6,7 @@ import type { PromptRevision } from "../revisions.ts";
 import { IDLE_PULSE_PERIOD_MS, LOGO_PULSE_PERIOD_MS } from "./constants.ts";
 
 export type AppScreen = "inbox" | "editor" | "diff" | "revisions" | "revision-preview" | "help";
-export type EditorSaveState = "clean" | "dirty" | "saving" | "error";
+export type EditorSaveState = "clean" | "dirty" | "saving" | "error" | "conflict";
 export type InboxInputMode = "create-folder" | "rename" | null;
 
 export interface InboxEntry {

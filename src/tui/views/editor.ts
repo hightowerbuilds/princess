@@ -30,10 +30,16 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
   const readOnly = state.state.editor.readOnly;
   const statusIndicator = readOnly
     ? "[read-only]"
-    : saveState !== "clean"
-      ? (saveState === "saving" ? "[saving]" : saveState === "dirty" ? "[dirty]" : "[save error]")
-      : "[saved]";
-  headerLines.push(dim(statusIndicator));
+    : saveState === "conflict"
+      ? yellow("[external change]")
+      : saveState === "saving"
+        ? "[saving]"
+        : saveState === "dirty"
+          ? "[dirty]"
+          : saveState === "error"
+            ? "[save error]"
+            : "[saved]";
+  headerLines.push(saveState === "conflict" ? statusIndicator : dim(statusIndicator));
 
   const headerCard = box(headerLines, cols - 1, {
     border: "single",
@@ -162,10 +168,15 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
   finalLines.push(...headerCardWithShadow);
   finalLines.push(...bodyCardWithShadow);
   finalLines.push("");
-  const footerHints = readOnly
-    ? ` [Esc] Inbox  [o] Browser  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `
-    : ` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `;
-  finalLines.push(dim(footerHints));
+  if (saveState === "conflict") {
+    const conflictHints = ` File changed on disk.  [Ctrl+S] Overwrite  [Esc] Discard your edits  Ln ${cLine + 1}, Col ${cCol + 1} `;
+    finalLines.push(yellow(conflictHints));
+  } else {
+    const footerHints = readOnly
+      ? ` [Esc] Inbox  [o] Browser  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `
+      : ` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `;
+    finalLines.push(dim(footerHints));
+  }
 
   return { lines: finalLines, cursor: hardwareCursor };
 }

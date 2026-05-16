@@ -416,7 +416,7 @@ Add findings here as this roadmap runs.
 - [ ] Make missing workspace errors suggest `princess list`.
 - [x] Protect concurrent HTML resource writes (2026-05-16: per-workspace `.princess.lock` file via new `src/file-lock.ts`; in-process and cross-process safe; PID + age-based stale recovery; wraps all seven HTML write entry points).
 - [ ] Decide lock/lease strategy for simultaneous writes.
-- [ ] Add external-change detection to the TUI editor.
+- [x] Add external-change detection to the TUI editor (2026-05-16: editor records on-disk mtime at open + after save; save aborts and flips to `conflict` state when on-disk mtime diverges from the baseline; Ctrl+S in conflict state explicitly overwrites; Esc discards in-memory edits; conflict banner replaces the normal footer hints. Inbox view auto-refreshes every 2s with cursor preserved by name).
 - [ ] Improve revision timestamps for same-day recovery.
 - [ ] Define browser preview command names.
 - [ ] Decide whether browser capture should default to Markdown or HTML.

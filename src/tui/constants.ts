@@ -1,4 +1,5 @@
 export const SAVE_DEBOUNCE_MS = 1200;
+export const INBOX_REFRESH_INTERVAL_MS = 2000;
 export const FRAME_BUDGET_MS = 16;
 
 export const IDLE_PULSE_PERIOD_MS = 4000;

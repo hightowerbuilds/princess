@@ -210,6 +210,21 @@ section("renderEditor dirty state");
   assert(lines.some((line) => line.includes("[dirty]")), "shows dirty indicator");
   }
 
+section("renderEditor conflict state");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "saveState", "conflict");
+  state.setState("editor", "file", "/tmp/editor-prompt.md");
+  state.setState("editor", "content", "in-memory edit\n");
+  const { lines } = renderEditor(state, 80, 24);
+  assert(lines.some((line) => line.includes("[external change]")), "shows the external-change indicator in the header");
+  assert(lines.some((line) => line.includes("File changed on disk")), "shows the conflict footer banner");
+  assert(lines.some((line) => line.includes("Overwrite")), "footer offers Ctrl+S overwrite");
+  assert(lines.some((line) => line.includes("Discard")), "footer offers Esc discard");
+}
+
 section("renderEditor preserves cursor character");
 
 {
