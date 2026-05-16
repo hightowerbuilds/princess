@@ -15,6 +15,20 @@ function safeTimestamp(date = new Date()): string {
   return date.toISOString().replace(/[:.]/g, "-");
 }
 
+/**
+ * Format a revision's `createdAt` (filename-style timestamp like
+ * `2026-05-16T18-14-14-450Z`, or a raw ISO string) as
+ * `YYYY-MM-DD HH:MM:SS` using UTC slicing — no timezone conversion, no
+ * locale formatting, so it is deterministic across users and tests.
+ */
+export function formatRevisionTimestamp(createdAt: string): string {
+  const date = createdAt.slice(0, 10);
+  const timePart = createdAt.slice(11, 19);
+  const time = timePart.replace(/-/g, ":");
+  if (!time) return date;
+  return `${date} ${time}`;
+}
+
 function getRevisionBaseDir(filePath: string, paths = getPaths()): string {
   const relativePath = path.relative(paths.inboxDir, filePath);
   if (!relativePath || relativePath.startsWith("..")) {

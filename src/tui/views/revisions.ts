@@ -2,6 +2,7 @@ import type { TuiState } from "../state.ts";
 import { dim, bgGray, white, black, cyan } from "../colors.ts";
 import { truncateEnd } from "../typeset-compose.ts";
 import { parsePromptDocument } from "../../prompts.ts";
+import { formatRevisionTimestamp } from "../../revisions.ts";
 import path from "node:path";
 
 export function renderRevisions(state: TuiState, cols: number, rows: number): string[] {
@@ -23,7 +24,7 @@ export function renderRevisions(state: TuiState, cols: number, rows: number): st
       const revision = revisions[i];
       const parsed = parsePromptDocument(revision.content);
       const preview = parsed.preview || parsed.metadata.title || "";
-      const timestamp = revision.createdAt.slice(0, 10);
+      const timestamp = formatRevisionTimestamp(revision.createdAt);
       const deltas = revision.added != null || revision.removed != null 
         ? ` (${revision.added ? `+${revision.added}` : ""} ${revision.removed ? `-${revision.removed}` : ""})`.trim()
         : "";

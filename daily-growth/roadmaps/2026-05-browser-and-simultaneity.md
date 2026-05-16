@@ -415,9 +415,9 @@ Add findings here as this roadmap runs.
 - [x] Sort `princess list` output consistently (2026-05-16: shares `compareInboxEntriesForDisplay` with the TUI — agent letter pinned at root, directories before files, alphabetical within; JSON entries enriched with `isDirectory`, `isHtmlWorkspace`, `isAsset`, `isTableData`; non-visible files like `.DS_Store` filtered from both surfaces).
 - [ ] Make missing workspace errors suggest `princess list`.
 - [x] Protect concurrent HTML resource writes (2026-05-16: per-workspace `.princess.lock` file via new `src/file-lock.ts`; in-process and cross-process safe; PID + age-based stale recovery; wraps all seven HTML write entry points).
-- [ ] Decide lock/lease strategy for simultaneous writes.
+- [x] Decide lock/lease strategy for simultaneous writes (2026-05-16: ratified the S3 file-lock approach as M1's answer — per-workspace `.princess.lock`, PID + age-based stale recovery, cross-process safe, no extra services).
 - [x] Add external-change detection to the TUI editor (2026-05-16: editor records on-disk mtime at open + after save; save aborts and flips to `conflict` state when on-disk mtime diverges from the baseline; Ctrl+S in conflict state explicitly overwrites; Esc discards in-memory edits; conflict banner replaces the normal footer hints. Inbox view auto-refreshes every 2s with cursor preserved by name).
-- [ ] Improve revision timestamps for same-day recovery.
+- [x] Improve revision timestamps for same-day recovery (2026-05-16: new `formatRevisionTimestamp` in `src/revisions.ts` produces `YYYY-MM-DD HH:MM:SS`; the TUI revision list uses it so same-day snapshots are distinguishable).
 - [ ] Define browser preview command names.
 - [ ] Decide whether browser capture should default to Markdown or HTML.
 - [ ] Define the many-agent contribution model for one shared HTML prompt workspace.

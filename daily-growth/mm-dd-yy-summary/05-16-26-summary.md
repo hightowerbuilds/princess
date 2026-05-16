@@ -269,3 +269,28 @@ Went straight from S3 into S4 to close out Phase 1 substrate. Picked lazy detect
 - **Phase 1 Substrate: 4/4 complete.** S1 ✅ S2 ✅ S3 ✅ S4 ✅. The stated Phase 1 goal — making the local file model safe for multiple actors — is met end-to-end: agents can parse `create-prompt` output, listings are stable, concurrent writes can't lose resources, and the TUI doesn't pretend the disk is frozen while it's not.
 - Phase 2 Browser Bridge: B3 partial (browser-open from yesterday). B1 (capture contract) is the natural next item.
 - Phases 3–5 untouched.
+
+## Phase 4 close-out — Multi-Actor Coordination
+
+Audited Phase 4 against what S3/S4 already shipped. M1 was already met by the S3 file lock (per-workspace, cross-process safe, no extra services); two of M2's three criteria and two of M3's three criteria were already met by S3+S4. Only three small slivers remained, and they were independent enough to parallelize.
+
+Dispatched three worktree-isolated agents in parallel:
+
+- **M2 remainder — friendlier CLI lock-timeout error.** `withWorkspaceLock` is now exported with an optional `{ timeoutMs?, staleAfterMs? }` options bag and catches the `"Timed out after "` error from `withFileLock`, translating it to `Another writer is updating workspace "<ref>". Try again in a moment.` Workspace ref is derived via `path.relative(getPaths().inboxDir, workspaceDir)` with separator normalization. New `workspaceRefFor` helper. Public HTML write APIs unchanged.
+- **M3 remainder — revision list shows time, not just date.** New exported `formatRevisionTimestamp(createdAt)` in `src/revisions.ts` produces `YYYY-MM-DD HH:MM:SS` from either filename-style (`2026-05-16T18-14-14-450Z`) or raw-ISO timestamps via UTC string slicing — no locale, no timezone conversion, deterministic. The TUI revision list (`views/revisions.ts`) calls it where it previously did `.slice(0, 10)`.
+- **Trial 7 finding — refresh frontmatter `updatedAt` on TUI save.** New `refreshFrontmatterUpdatedAt(file, content)` helper at module level in `tui/app.ts`. The save loop now distinguishes `rawContent` (what's in the editor) from `content` (what gets written): for `.md` files with frontmatter that has an `updatedAt` line, the helper surgically replaces the value with `new Date().toISOString()` inside the frontmatter block only. Works for both normal and `overwriteExternal` paths. The in-memory `state.editor.content` and `baseline` are both updated to the rewritten content so the next save is correctly a no-op when nothing else changed.
+
+### Integration
+
+Each agent worked in an isolated worktree, ran `bunx tsc --noEmit` + `bun run test` locally, and reported back with diffs. I applied the three diffs to the main worktree (mostly clean Edit calls; test files were copy-overs since they were append-only) and re-ran the unified suite.
+
+### Verification
+
+- `bunx tsc --noEmit` clean.
+- All 13 suites green: html-prompts 64 → 68 (+4 lock-timeout assertions), revisions 9 → 11 (+2 formatter unit tests), views 45 → 48 (+3 revision-list time test), app 19 → 25 (+6 updatedAt save test). Net +15 assertions across the run.
+
+### Phase 4 status after today
+
+- **M1 ✅ M2 ✅ M3 ✅ — Phase 4 complete.** The "make simultaneous human/agent/CLI/browser activity boring" goal is now met to the extent the substrate supports: locks are recoverable, conflicts have actionable UX in both surfaces, revisions preserve external versions and are timestamped precisely enough to recover from.
+- Phase 5 (Many-Agent Prompt Building) is the natural next chunk if we want to keep cashing in the substrate. It builds on Phase 4 directly with contribution slots, an agent-contribution command, and a review/merge flow.
+- Phase 2 (Browser Bridge) deferred — see the earlier honest discussion about waiting until a real browser workflow naturally surfaces.

@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { getPaths } from "./paths.ts";
-import { getPromptRevisionDir, recordPromptRevision, readLatestPromptRevision, listPromptRevisions } from "./revisions.ts";
+import { getPromptRevisionDir, recordPromptRevision, readLatestPromptRevision, listPromptRevisions, formatRevisionTimestamp } from "./revisions.ts";
 
 let passed = 0;
 let failed = 0;
@@ -68,6 +68,19 @@ try {
   const deltaRevisions = await listPromptRevisions(deltaFile, paths);
   assertEq(deltaRevisions[0].removed, 1, "delta counts removal of one duplicate line");
   assertEq(deltaRevisions[0].added, 0, "delta does not invent additions for duplicate removals");
+
+  section("formatRevisionTimestamp");
+
+  assertEq(
+    formatRevisionTimestamp("2026-05-16T18-14-14-450Z"),
+    "2026-05-16 18:14:14",
+    "formats filename-style timestamps as YYYY-MM-DD HH:MM:SS",
+  );
+  assertEq(
+    formatRevisionTimestamp("2026-05-16T18:14:14.450Z"),
+    "2026-05-16 18:14:14",
+    "formats raw ISO timestamps as YYYY-MM-DD HH:MM:SS",
+  );
 
   section("external revision paths");
 

@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/prom
 import { getPaths } from "./paths.ts";
 import { sanitizePromptTitle } from "./prompts.ts";
 import { atomicWriteFile } from "./storage.ts";
-import { withFileLock } from "./file-lock.ts";
+import { withFileLock, type WithFileLockOptions } from "./file-lock.ts";
 
 export type HtmlPromptResourceType = "source" | "asset" | "table";
 export type HtmlPromptTrust = "trusted" | "untrusted";
@@ -275,12 +275,26 @@ function workspaceLockPath(workspaceDir: string): string {
   return path.join(workspaceDir, WORKSPACE_LOCK_FILENAME);
 }
 
-async function withWorkspaceLock<T>(workspaceDir: string, work: () => Promise<T>): Promise<T> {
+function workspaceRefFor(workspaceDir: string): string {
+  const relative = path.relative(getPaths().inboxDir, workspaceDir);
+  return relative.split(path.sep).join("/");
+}
+
+export async function withWorkspaceLock<T>(
+  workspaceDir: string,
+  work: () => Promise<T>,
+  options: Pick<WithFileLockOptions, "timeoutMs" | "staleAfterMs"> = {},
+): Promise<T> {
   try {
-    return await withFileLock(workspaceLockPath(workspaceDir), work);
+    return await withFileLock(workspaceLockPath(workspaceDir), work, options);
   } catch (err) {
     if ((err as { code?: string }).code === "ENOENT") {
       throw new Error(`HTML prompt workspace not found: ${workspaceDir}`);
+    }
+    if (err instanceof Error && err.message.startsWith("Timed out after ")) {
+      throw new Error(
+        `Another writer is updating workspace "${workspaceRefFor(workspaceDir)}". Try again in a moment.`,
+      );
     }
     throw err;
   }

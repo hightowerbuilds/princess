@@ -112,6 +112,22 @@ export async function runApp(state: TuiState): Promise<void> {
   editorSaveAPI = null;
 }
 
+function refreshFrontmatterUpdatedAt(file: string, content: string): string {
+  if (path.extname(file) !== ".md") return content;
+  const parsed = parsePromptDocument(content);
+  if (!parsed.hasFrontmatter || !parsed.metadata.updatedAt) return content;
+  const normalized = content.replace(/\r\n/g, "\n");
+  if (!normalized.startsWith("---\n")) return content;
+  const endIdx = normalized.indexOf("\n---\n", 4);
+  if (endIdx < 0) return content;
+  const frontmatterBlock = normalized.slice(4, endIdx);
+  const rest = normalized.slice(endIdx);
+  const timestamp = new Date().toISOString();
+  const updatedBlock = frontmatterBlock.replace(/^updatedAt:.*$/m, `updatedAt: ${timestamp}`);
+  if (updatedBlock === frontmatterBlock) return content;
+  return `---\n${updatedBlock}${rest}`;
+}
+
 export function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
   let baseline = "";
   let baselineMtimeMs: number | null = null;
@@ -132,8 +148,8 @@ export function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
     if (!file) return;
     inFlight = (async () => {
       try {
-        const content = state.state.editor.content;
-        if (content === baseline) {
+        const rawContent = state.state.editor.content;
+        if (rawContent === baseline) {
           state.setState("editor", "saveState", "clean");
           return;
         }
@@ -147,6 +163,7 @@ export function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
           state.setState("editor", "saveState", "conflict");
           return;
         }
+        const content = refreshFrontmatterUpdatedAt(file, rawContent);
         const previousContent = await readFile(file, "utf8").catch(() => null);
         if (previousContent !== null && previousContent !== content && (forceSnapshot || baseline !== "")) {
           await recordPromptRevision(file, previousContent);
@@ -154,6 +171,9 @@ export function createEditorSaveLoop(state: TuiState): EditorSaveAPI {
         state.setState("editor", "saveState", "saving");
         await atomicWriteFile(file, content);
         baseline = content;
+        if (content !== rawContent) {
+          state.setState("editor", "content", content);
+        }
         baselineMtimeMs = await readMtimeMs(file);
         state.setState("editor", "saveState", "clean");
       } catch (err: any) {

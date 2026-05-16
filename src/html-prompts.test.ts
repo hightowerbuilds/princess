@@ -18,6 +18,7 @@ import {
   removeHtmlPromptResource,
   removeHtmlPromptSection,
   upsertHtmlPromptSection,
+  withWorkspaceLock,
 } from "./html-prompts.ts";
 
 let passed = 0;
@@ -324,6 +325,56 @@ try {
 
       const lintIssues = await lintHtmlPromptWorkspace("concurrency-drill");
       assertEq(lintIssues, [], "lint passes after parallel resource writes");
+    },
+  );
+
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "lock-timeout"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      section("lock timeout surfaces a workspace-aware error");
+
+      const paths = getPaths();
+      await mkdir(paths.inboxDir, { recursive: true });
+      const ws = await createHtmlPromptWorkspace("Timeout Drill", {});
+
+      const lockPath = path.join(ws.path, ".princess.lock");
+      const holderPayload = {
+        pid: process.pid,
+        hostname: os.hostname(),
+        acquiredAt: new Date().toISOString(),
+      };
+      await writeFile(lockPath, `${JSON.stringify(holderPayload)}\n`, { flag: "wx" });
+
+      let caught: Error | null = null;
+      try {
+        await withWorkspaceLock(
+          ws.path,
+          async () => "should not run",
+          { timeoutMs: 80, staleAfterMs: 60_000 },
+        );
+      } catch (err) {
+        caught = err as Error;
+      }
+
+      assert(caught !== null, "withWorkspaceLock throws when the lock is held");
+      assert(
+        caught !== null && caught.message.includes("timeout-drill"),
+        "timeout error includes the inbox-relative workspace ref",
+      );
+      assert(
+        caught !== null && !caught.message.includes(".princess.lock"),
+        "timeout error hides the lock filename",
+      );
+      assert(
+        caught !== null && !/(^|\s)\/[A-Za-z0-9_.\-/]+/.test(caught.message),
+        "timeout error hides absolute filesystem paths",
+      );
+
+      await rm(lockPath, { force: true });
     },
   );
 } finally {

@@ -226,6 +226,73 @@ try {
     });
   }
 
+  section("editor save refreshes frontmatter updatedAt");
+
+  {
+    const editorDir = path.join(tempRoot, "editor-updatedat");
+    await mkdir(editorDir, { recursive: true });
+    const filepath = path.join(editorDir, "prompt.md");
+    const oldStamp = "2020-01-01T00:00:00.000Z";
+    const originalContent =
+      `---\ntitle: Sample\ncreatedAt: ${oldStamp}\nupdatedAt: ${oldStamp}\n---\noriginal body\n`;
+    await writeFile(filepath, originalContent, "utf8");
+
+    const state = createTuiState();
+    await new Promise<void>((resolve) => {
+      createRoot(async (dispose) => {
+        const api = createEditorSaveLoop(state);
+        state.setState("editor", "file", filepath);
+        state.setState("editor", "content", originalContent);
+        await api.resetBaseline();
+
+        const editedContent =
+          `---\ntitle: Sample\ncreatedAt: ${oldStamp}\nupdatedAt: ${oldStamp}\n---\nupdated body\n`;
+        const beforeSave = Date.now();
+        state.setState("editor", "content", editedContent);
+        await api.save(true);
+        const afterSave = Date.now();
+
+        const onDisk = await readFile(filepath, "utf8");
+        assertEq(
+          onDisk.includes(`updatedAt: ${oldStamp}`),
+          false,
+          "save rewrites the stale updatedAt frontmatter line",
+        );
+        assertEq(
+          onDisk.includes("updated body"),
+          true,
+          "save persists the body edit alongside the frontmatter refresh",
+        );
+
+        const match = onDisk.match(/^updatedAt: (.+)$/m);
+        assertEq(match !== null, true, "save writes a fresh updatedAt frontmatter line");
+        const newStamp = match ? match[1] : "";
+        const parsedStamp = new Date(newStamp).getTime();
+        assertEq(
+          Number.isFinite(parsedStamp) && parsedStamp >= beforeSave - 1000 && parsedStamp <= afterSave + 1000,
+          true,
+          "new updatedAt parses as a Date close to the save moment",
+        );
+
+        assertEq(
+          state.state.editor.content,
+          onDisk,
+          "in-memory editor content matches the rewritten on-disk content",
+        );
+
+        await api.save(false);
+        assertEq(
+          state.state.editor.saveState,
+          "clean",
+          "subsequent save with no further edits is a no-op clean (baseline matches refreshed content)",
+        );
+
+        dispose();
+        resolve();
+      });
+    });
+  }
+
   section("loadInboxFiles preserves cursor by name on refresh");
 
   {

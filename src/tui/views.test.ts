@@ -281,6 +281,41 @@ section("renderRevisions");
   assert(lines.some((line) => line.includes("[Enter] Preview")), "shows preview shortcut");
 }
 
+section("renderRevisions shows time as well as date");
+
+{
+  const state = createTuiState();
+  state.setState("terminal", { columns: 80, rows: 24 });
+  state.setState("editor", "file","/tmp/history-prompt.md");
+  state.setState("revisions", "files",[
+    {
+      path: "/tmp/history/2026-05-16T18-14-14-450Z.md",
+      createdAt: "2026-05-16T18-14-14-450Z",
+      content: buildPromptDocument("First Snapshot", {
+        category: "ops",
+        status: "ready",
+        createdAt: "2026-05-16T18:14:14.450Z",
+        updatedAt: "2026-05-16T18:14:14.450Z",
+      }),
+    },
+    {
+      path: "/tmp/history/2026-05-16T18-14-20-903Z.md",
+      createdAt: "2026-05-16T18-14-20-903Z",
+      content: buildPromptDocument("Second Snapshot", {
+        category: "ops",
+        status: "ready",
+        createdAt: "2026-05-16T18:14:20.903Z",
+        updatedAt: "2026-05-16T18:14:20.903Z",
+      }),
+    },
+  ]);
+
+  const lines = renderRevisions(state, 80, 24);
+  assert(lines.some((line) => line.includes("2026-05-16")), "shows the shared date");
+  assert(lines.some((line) => line.includes("18:14:14")), "shows the first snapshot's time");
+  assert(lines.some((line) => line.includes("18:14:20")), "shows the second snapshot's time");
+}
+
 section("renderRevisionPreview");
 
 {
