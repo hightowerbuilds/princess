@@ -414,7 +414,7 @@ Add findings here as this roadmap runs.
 - [x] Add `create-prompt --json` (2026-05-16: returns `path`, `ref`, `title`, `format`, `category`, `collision`; failures now throw so the top-level `error: ...` handler exits non-zero).
 - [x] Sort `princess list` output consistently (2026-05-16: shares `compareInboxEntriesForDisplay` with the TUI — agent letter pinned at root, directories before files, alphabetical within; JSON entries enriched with `isDirectory`, `isHtmlWorkspace`, `isAsset`, `isTableData`; non-visible files like `.DS_Store` filtered from both surfaces).
 - [ ] Make missing workspace errors suggest `princess list`.
-- [ ] Protect concurrent HTML resource writes.
+- [x] Protect concurrent HTML resource writes (2026-05-16: per-workspace `.princess.lock` file via new `src/file-lock.ts`; in-process and cross-process safe; PID + age-based stale recovery; wraps all seven HTML write entry points).
 - [ ] Decide lock/lease strategy for simultaneous writes.
 - [ ] Add external-change detection to the TUI editor.
 - [ ] Improve revision timestamps for same-day recovery.

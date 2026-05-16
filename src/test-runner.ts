@@ -9,6 +9,7 @@ const suites: TestSuite[] = [
   { name: "html-prompts", command: ["bun", "run", "src/html-prompts.test.ts"] },
   { name: "browser", command: ["bun", "run", "src/browser.test.ts"] },
   { name: "storage", command: ["bun", "run", "src/storage.test.ts"] },
+  { name: "file-lock", command: ["bun", "run", "src/file-lock.test.ts"] },
   { name: "revisions", command: ["bun", "run", "src/revisions.test.ts"] },
   { name: "views", command: ["bun", "run", "src/tui/views.test.ts"] },
   { name: "app", command: ["bun", "run", "src/tui/app.test.ts"] },

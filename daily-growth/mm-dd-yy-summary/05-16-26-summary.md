@@ -213,10 +213,30 @@ Picked up the Browser and Simultaneity roadmap. Verified the roadmap's stated st
 - `bun run test` — all 9 suites green.
 - Live smoke against a temp `PRINCESS_HOME` confirmed: S1 prints correct JSON for first-create, collision-suffix, and HTML cases (and unchanged human output otherwise); S2 sorts agent-letter-first, directories alphabetically before files, tags HTML workspaces in both surfaces, and filters `.DS_Store`.
 
+### S3 landed — Resource write safety via per-workspace file lock
+
+Picked S3 next per the same-day pivot note. The Trial 4 finding captured the exact failure mode: parallel `add-source` + `add-asset` both succeed but only one resource lands in `manifest.json`, then lint fails with `unknown-include` because `prompt.html` references a manifest entry that no longer exists. Root cause is a read-modify-write race — both invocations read the same baseline manifest, mutate independently, and the second `atomicWriteFile` wins.
+
+Considered three approaches: in-process serialization (insufficient — Trial 4 was two shell processes), filesystem advisory lock (cross-process, no extra services), and compare-and-swap (schema change). Picked the file lock: minimum surface area, solves the actual reported failure, no manifest format change.
+
+- **New `src/file-lock.ts`** — general-purpose `withFileLock(lockPath, work, options)`. Try to create the lock with `O_EXCL` (`wx` flag); on `EEXIST`, attempt stale-recovery (dead PID on same host, or `acquiredAt` older than `staleAfterMs`) and retry; otherwise back off with jittered exponential polling up to `timeoutMs`. Lock payload (`{ pid, hostname, acquiredAt }`) is written into the file itself so stale-recovery can decide intelligently rather than guess from age alone. Always released in `finally`, even when `work()` throws.
+- **`src/html-prompts.ts`** — added a `withWorkspaceLock(workspaceDir, work)` wrapper using `.princess.lock` inside each workspace dir, and wrapped all seven write entry points: `addHtmlPromptSource`, `addHtmlPromptAsset`, `importHtmlPromptTable`, `upsertHtmlPromptSection`, `removeHtmlPromptSection`, `moveHtmlPromptSection`, `removeHtmlPromptResource`. ENOENT on lock acquisition (i.e., the workspace dir itself doesn't exist) is translated to the standard "HTML prompt workspace not found" error so users see a clean message rather than a lock-file path.
+- **Intentionally not locked:** `compileHtmlPromptWorkspace` is read-mostly and only writes to `dist/`, so concurrent writes can produce a stale output but never corrupt source. If we want compile to see a consistent snapshot later we'd take a shared/read lock — the current exclusive helper isn't the right shape for that. The lock is per-workspace, not global, so unrelated workspaces never block.
+- **Tests:**
+  - `src/file-lock.test.ts` (new) — 14 assertions covering serialization of overlapping callers, release after `work()` throws, dead-PID stale recovery, age-based stale recovery, timeout when the holder stays alive, and lock-payload contents.
+  - `src/html-prompts.test.ts` extended — new `parallel resource writes preserve every resource` section fires `addHtmlPromptSource × 2 + addHtmlPromptAsset + importHtmlPromptTable` in parallel against one workspace, then asserts the manifest has all four resources, `prompt.html` has all four snippets, and `lint` returns no issues.
+- **Test runner** — registered the new `file-lock` suite.
+
+### Verification (S3)
+
+- `bunx tsc --noEmit` clean.
+- All 13 suites green (was 12; `file-lock` is the new suite). CLI suite unchanged at 68; html-prompts went 58 → 64 with the parallel-write test.
+- **Live smoke reproducing the Trial 4 failure mode:** three real `princess` CLI processes (`add-source`, `add-asset`, `import-table`) launched in parallel against the same workspace via shell `&`. All three reported success; `princess html list --json` showed all three resources; `princess html lint` passed (no `unknown-include`); `.princess.lock` was cleaned up. The exact regression Trial 4 captured is now fixed at the binary level, not just inside the test process.
+
 ### Roadmap status after today
 
-- Phase 1 Substrate: 2 of 4 done (S1 ✅, S2 ✅, S3 resource write safety pending, S4 TUI external-change awareness pending).
+- Phase 1 Substrate: 3 of 4 done (S1 ✅, S2 ✅, S3 ✅, S4 TUI external-change awareness pending).
 - Phase 2 Browser Bridge: B3 partial (browser-open from yesterday). B1/B2/B4 pending.
 - Phases 3–5 untouched.
 
-S3 (manifest write race fixed in Trial 4) is the natural next item — it's the highest-impact remaining Phase 1 work and unblocks any future multi-agent contribution flow.
+S4 (TUI external-change awareness) is the last Phase 1 substrate item.

@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/prom
 import { getPaths } from "./paths.ts";
 import { sanitizePromptTitle } from "./prompts.ts";
 import { atomicWriteFile } from "./storage.ts";
+import { withFileLock } from "./file-lock.ts";
 
 export type HtmlPromptResourceType = "source" | "asset" | "table";
 export type HtmlPromptTrust = "trusted" | "untrusted";
@@ -268,6 +269,23 @@ async function readWorkspace(workspaceRef: string): Promise<HtmlPromptWorkspace>
   return { path: workspaceDir, manifest };
 }
 
+const WORKSPACE_LOCK_FILENAME = ".princess.lock";
+
+function workspaceLockPath(workspaceDir: string): string {
+  return path.join(workspaceDir, WORKSPACE_LOCK_FILENAME);
+}
+
+async function withWorkspaceLock<T>(workspaceDir: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await withFileLock(workspaceLockPath(workspaceDir), work);
+  } catch (err) {
+    if ((err as { code?: string }).code === "ENOENT") {
+      throw new Error(`HTML prompt workspace not found: ${workspaceDir}`);
+    }
+    throw err;
+  }
+}
+
 async function appendResourceReference(workspaceDir: string, snippet: string): Promise<void> {
   const filePath = promptPath(workspaceDir);
   const existing = await readFile(filePath, "utf8");
@@ -390,24 +408,27 @@ export async function addHtmlPromptSource(
   sourcePath: string,
   options: { name?: string; trust?: string } = {},
 ): Promise<HtmlPromptResource> {
-  const workspace = await readWorkspace(workspaceRef);
-  const requestedId = options.name?.trim() || resourceIdFromName(sourcePath);
-  const id = uniqueResourceId(workspace.manifest, requestedId);
-  const resourcePath = await copyIntoWorkspace(workspace.path, sourcePath, "sources", id);
-  const resource: HtmlPromptResource = {
-    id,
-    type: "source",
-    path: resourcePath,
-    originalPath: path.resolve(sourcePath),
-    mediaType: mediaTypeFor(sourcePath),
-    trust: normalizeTrust(options.trust),
-    addedAt: nowIso(),
-  };
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  return withWorkspaceLock(workspaceDir, async () => {
+    const workspace = await readWorkspace(workspaceRef);
+    const requestedId = options.name?.trim() || resourceIdFromName(sourcePath);
+    const id = uniqueResourceId(workspace.manifest, requestedId);
+    const resourcePath = await copyIntoWorkspace(workspace.path, sourcePath, "sources", id);
+    const resource: HtmlPromptResource = {
+      id,
+      type: "source",
+      path: resourcePath,
+      originalPath: path.resolve(sourcePath),
+      mediaType: mediaTypeFor(sourcePath),
+      trust: normalizeTrust(options.trust),
+      addedAt: nowIso(),
+    };
 
-  workspace.manifest.resources.push(resource);
-  await writeHtmlPromptManifest(workspace.path, workspace.manifest);
-  await appendResourceReference(workspace.path, sourceSnippet(resource));
-  return resource;
+    workspace.manifest.resources.push(resource);
+    await writeHtmlPromptManifest(workspace.path, workspace.manifest);
+    await appendResourceReference(workspace.path, sourceSnippet(resource));
+    return resource;
+  });
 }
 
 export async function addHtmlPromptAsset(
@@ -415,24 +436,27 @@ export async function addHtmlPromptAsset(
   assetPath: string,
   options: { name?: string; alt?: string } = {},
 ): Promise<HtmlPromptResource> {
-  const workspace = await readWorkspace(workspaceRef);
-  const requestedId = options.name?.trim() || resourceIdFromName(assetPath);
-  const id = uniqueResourceId(workspace.manifest, requestedId);
-  const resourcePath = await copyIntoWorkspace(workspace.path, assetPath, "assets", id);
-  const resource: HtmlPromptResource = {
-    id,
-    type: "asset",
-    path: resourcePath,
-    originalPath: path.resolve(assetPath),
-    mediaType: mediaTypeFor(assetPath),
-    alt: options.alt?.trim() || path.basename(assetPath),
-    addedAt: nowIso(),
-  };
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  return withWorkspaceLock(workspaceDir, async () => {
+    const workspace = await readWorkspace(workspaceRef);
+    const requestedId = options.name?.trim() || resourceIdFromName(assetPath);
+    const id = uniqueResourceId(workspace.manifest, requestedId);
+    const resourcePath = await copyIntoWorkspace(workspace.path, assetPath, "assets", id);
+    const resource: HtmlPromptResource = {
+      id,
+      type: "asset",
+      path: resourcePath,
+      originalPath: path.resolve(assetPath),
+      mediaType: mediaTypeFor(assetPath),
+      alt: options.alt?.trim() || path.basename(assetPath),
+      addedAt: nowIso(),
+    };
 
-  workspace.manifest.resources.push(resource);
-  await writeHtmlPromptManifest(workspace.path, workspace.manifest);
-  await appendResourceReference(workspace.path, assetSnippet(resource));
-  return resource;
+    workspace.manifest.resources.push(resource);
+    await writeHtmlPromptManifest(workspace.path, workspace.manifest);
+    await appendResourceReference(workspace.path, assetSnippet(resource));
+    return resource;
+  });
 }
 
 function parseDelimitedRows(content: string, delimiter: "," | "\t"): string[][] {
@@ -516,44 +540,47 @@ export async function importHtmlPromptTable(
   tablePath: string,
   options: { name?: string; trust?: string } = {},
 ): Promise<HtmlPromptResource> {
-  const workspace = await readWorkspace(workspaceRef);
-  const requestedId = options.name?.trim() || resourceIdFromName(tablePath);
-  const id = uniqueResourceId(workspace.manifest, requestedId);
-  const absoluteTablePath = path.resolve(tablePath);
-  const content = await readFile(absoluteTablePath, "utf8").catch((error) => {
-    if ((error as { code?: string }).code === "ENOENT") {
-      throw new Error(`Table source file not found: ${absoluteTablePath}`);
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  return withWorkspaceLock(workspaceDir, async () => {
+    const workspace = await readWorkspace(workspaceRef);
+    const requestedId = options.name?.trim() || resourceIdFromName(tablePath);
+    const id = uniqueResourceId(workspace.manifest, requestedId);
+    const absoluteTablePath = path.resolve(tablePath);
+    const content = await readFile(absoluteTablePath, "utf8").catch((error) => {
+      if ((error as { code?: string }).code === "ENOENT") {
+        throw new Error(`Table source file not found: ${absoluteTablePath}`);
+      }
+      throw error;
+    });
+    const delimiter = path.extname(tablePath).toLowerCase() === ".tsv" ? "\t" : ",";
+    let tableHtml: string;
+    try {
+      tableHtml = rowsToHtmlTable(parseDelimitedRows(content, delimiter));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to import table "${absoluteTablePath}": ${message}`);
     }
-    throw error;
+
+    const targetDir = path.join(workspace.path, "partials");
+    await mkdir(targetDir, { recursive: true });
+    const targetPath = path.join(targetDir, `${id}.table.html`);
+    await atomicWriteFile(targetPath, tableHtml);
+
+    const resource: HtmlPromptResource = {
+      id,
+      type: "table",
+      path: relativeForWorkspace(workspace.path, targetPath),
+      originalPath: path.resolve(tablePath),
+      mediaType: "text/html",
+      trust: normalizeTrust(options.trust),
+      addedAt: nowIso(),
+    };
+
+    workspace.manifest.resources.push(resource);
+    await writeHtmlPromptManifest(workspace.path, workspace.manifest);
+    await appendResourceReference(workspace.path, tableSnippet(resource));
+    return resource;
   });
-  const delimiter = path.extname(tablePath).toLowerCase() === ".tsv" ? "\t" : ",";
-  let tableHtml: string;
-  try {
-    tableHtml = rowsToHtmlTable(parseDelimitedRows(content, delimiter));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to import table "${absoluteTablePath}": ${message}`);
-  }
-
-  const targetDir = path.join(workspace.path, "partials");
-  await mkdir(targetDir, { recursive: true });
-  const targetPath = path.join(targetDir, `${id}.table.html`);
-  await atomicWriteFile(targetPath, tableHtml);
-
-  const resource: HtmlPromptResource = {
-    id,
-    type: "table",
-    path: relativeForWorkspace(workspace.path, targetPath),
-    originalPath: path.resolve(tablePath),
-    mediaType: "text/html",
-    trust: normalizeTrust(options.trust),
-    addedAt: nowIso(),
-  };
-
-  workspace.manifest.resources.push(resource);
-  await writeHtmlPromptManifest(workspace.path, workspace.manifest);
-  await appendResourceReference(workspace.path, tableSnippet(resource));
-  return resource;
 }
 
 export async function upsertHtmlPromptSection(
@@ -562,42 +589,45 @@ export async function upsertHtmlPromptSection(
   content: string,
   options: { heading?: string; mode?: HtmlPromptSectionMode } = {},
 ): Promise<void> {
-  const workspace = await readWorkspace(workspaceRef);
-  const normalizedRole = normalizeSectionRole(role);
-  const mode = options.mode ?? "text";
-  if (mode !== "text" && mode !== "html") {
-    throw new Error(`Invalid section mode "${mode}". Use "text" or "html".`);
-  }
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  return withWorkspaceLock(workspaceDir, async () => {
+    const workspace = await readWorkspace(workspaceRef);
+    const normalizedRole = normalizeSectionRole(role);
+    const mode = options.mode ?? "text";
+    if (mode !== "text" && mode !== "html") {
+      throw new Error(`Invalid section mode "${mode}". Use "text" or "html".`);
+    }
 
-  const filePath = promptPath(workspace.path);
-  const existing = await readFile(filePath, "utf8");
-  const nextSection = sectionForContent(normalizedRole, content, {
-    heading: options.heading,
-    mode,
+    const filePath = promptPath(workspace.path);
+    const existing = await readFile(filePath, "utf8");
+    const nextSection = sectionForContent(normalizedRole, content, {
+      heading: options.heading,
+      mode,
+    });
+
+    const sectionRe = new RegExp(
+      `\\s*<section\\b(?=[^>]*data-princess-role=["']${escapeRegExp(normalizedRole)}["'])[^>]*>[\\s\\S]*?</section>\\s*`,
+      "g",
+    );
+
+    if (sectionRe.test(existing)) {
+      await atomicWriteFile(filePath, `${existing.replace(sectionRe, `\n    ${nextSection}\n`)}`);
+      return;
+    }
+
+    const resourcesRe = /\n\s*<section\b(?=[^>]*data-princess-role=["']resources["'])/;
+    if (resourcesRe.test(existing)) {
+      await atomicWriteFile(filePath, existing.replace(resourcesRe, `\n\n    ${nextSection}$&`));
+      return;
+    }
+
+    if (existing.includes("</main>")) {
+      await atomicWriteFile(filePath, existing.replace("</main>", `    ${nextSection}\n  </main>`));
+      return;
+    }
+
+    await atomicWriteFile(filePath, `${existing.trimEnd()}\n\n${nextSection}\n`);
   });
-
-  const sectionRe = new RegExp(
-    `\\s*<section\\b(?=[^>]*data-princess-role=["']${escapeRegExp(normalizedRole)}["'])[^>]*>[\\s\\S]*?</section>\\s*`,
-    "g",
-  );
-
-  if (sectionRe.test(existing)) {
-    await atomicWriteFile(filePath, `${existing.replace(sectionRe, `\n    ${nextSection}\n`)}`);
-    return;
-  }
-
-  const resourcesRe = /\n\s*<section\b(?=[^>]*data-princess-role=["']resources["'])/;
-  if (resourcesRe.test(existing)) {
-    await atomicWriteFile(filePath, existing.replace(resourcesRe, `\n\n    ${nextSection}$&`));
-    return;
-  }
-
-  if (existing.includes("</main>")) {
-    await atomicWriteFile(filePath, existing.replace("</main>", `    ${nextSection}\n  </main>`));
-    return;
-  }
-
-  await atomicWriteFile(filePath, `${existing.trimEnd()}\n\n${nextSection}\n`);
 }
 
 export async function readHtmlPromptSource(workspaceRef: string): Promise<string> {
@@ -691,21 +721,23 @@ export async function removeHtmlPromptSection(
     throw new Error(`Section "${normalizedRole}" is auto-managed and cannot be removed.`);
   }
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
-  const filePath = promptPath(workspaceDir);
-  const html = await readFile(filePath, "utf8");
-  const target = findRoleSections(html).find((s) => s.role === normalizedRole);
-  if (!target) return false;
+  return withWorkspaceLock(workspaceDir, async () => {
+    const filePath = promptPath(workspaceDir);
+    const html = await readFile(filePath, "utf8");
+    const target = findRoleSections(html).find((s) => s.role === normalizedRole);
+    if (!target) return false;
 
-  let lead = target.startIdx;
-  while (lead > 0 && (html[lead - 1] === " " || html[lead - 1] === "\t")) lead--;
-  if (lead > 0 && html[lead - 1] === "\n") lead--;
-  let trail = target.endIdx;
-  while (trail < html.length && (html[trail] === " " || html[trail] === "\t")) trail++;
-  if (trail < html.length && html[trail] === "\n") trail++;
+    let lead = target.startIdx;
+    while (lead > 0 && (html[lead - 1] === " " || html[lead - 1] === "\t")) lead--;
+    if (lead > 0 && html[lead - 1] === "\n") lead--;
+    let trail = target.endIdx;
+    while (trail < html.length && (html[trail] === " " || html[trail] === "\t")) trail++;
+    if (trail < html.length && html[trail] === "\n") trail++;
 
-  const next = html.slice(0, lead) + html.slice(trail);
-  await atomicWriteFile(filePath, next);
-  return true;
+    const next = html.slice(0, lead) + html.slice(trail);
+    await atomicWriteFile(filePath, next);
+    return true;
+  });
 }
 
 export type MoveSectionPosition =
@@ -723,49 +755,51 @@ export async function moveHtmlPromptSection(
     throw new Error(`Section "${normalizedRole}" is auto-managed and cannot be moved.`);
   }
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
-  const filePath = promptPath(workspaceDir);
-  const html = await readFile(filePath, "utf8");
-  const sections = findRoleSections(html);
-  const sourceIdx = sections.findIndex((s) => s.role === normalizedRole);
-  if (sourceIdx === -1) return false;
+  return withWorkspaceLock(workspaceDir, async () => {
+    const filePath = promptPath(workspaceDir);
+    const html = await readFile(filePath, "utf8");
+    const sections = findRoleSections(html);
+    const sourceIdx = sections.findIndex((s) => s.role === normalizedRole);
+    if (sourceIdx === -1) return false;
 
-  let targetIdx: number;
-  if ("before" in position) {
-    const refRole = normalizeSectionRole(position.before);
-    const idx = sections.findIndex((s) => s.role === refRole);
-    if (idx === -1) throw new Error(`Reference section "${refRole}" not found.`);
-    targetIdx = idx;
-  } else if ("after" in position) {
-    const refRole = normalizeSectionRole(position.after);
-    const idx = sections.findIndex((s) => s.role === refRole);
-    if (idx === -1) throw new Error(`Reference section "${refRole}" not found.`);
-    targetIdx = idx + 1;
-  } else {
-    targetIdx = Math.max(0, Math.min(position.to, sections.length));
-  }
+    let targetIdx: number;
+    if ("before" in position) {
+      const refRole = normalizeSectionRole(position.before);
+      const idx = sections.findIndex((s) => s.role === refRole);
+      if (idx === -1) throw new Error(`Reference section "${refRole}" not found.`);
+      targetIdx = idx;
+    } else if ("after" in position) {
+      const refRole = normalizeSectionRole(position.after);
+      const idx = sections.findIndex((s) => s.role === refRole);
+      if (idx === -1) throw new Error(`Reference section "${refRole}" not found.`);
+      targetIdx = idx + 1;
+    } else {
+      targetIdx = Math.max(0, Math.min(position.to, sections.length));
+    }
 
-  if (targetIdx === sourceIdx || targetIdx === sourceIdx + 1) return true;
+    if (targetIdx === sourceIdx || targetIdx === sourceIdx + 1) return true;
 
-  const reordered = sections.map((s) => ({
-    role: s.role,
-    text: html.slice(s.startIdx, s.endIdx),
-  }));
-  const [moved] = reordered.splice(sourceIdx, 1);
-  const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
-  reordered.splice(adjustedTarget, 0, moved);
+    const reordered = sections.map((s) => ({
+      role: s.role,
+      text: html.slice(s.startIdx, s.endIdx),
+    }));
+    const [moved] = reordered.splice(sourceIdx, 1);
+    const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
+    reordered.splice(adjustedTarget, 0, moved);
 
-  const firstStart = sections[0].startIdx;
-  const lastEnd = sections[sections.length - 1].endIdx;
+    const firstStart = sections[0].startIdx;
+    const lastEnd = sections[sections.length - 1].endIdx;
 
-  const before = html.slice(0, firstStart);
-  const after = html.slice(lastEnd);
-  const indentMatch = before.match(/(^|\n)([ \t]+)$/);
-  const indent = indentMatch ? indentMatch[2] : "    ";
+    const before = html.slice(0, firstStart);
+    const after = html.slice(lastEnd);
+    const indentMatch = before.match(/(^|\n)([ \t]+)$/);
+    const indent = indentMatch ? indentMatch[2] : "    ";
 
-  const joined = reordered.map((s) => s.text.trim()).join(`\n\n${indent}`);
-  const next = `${before}${joined}${after}`;
-  await atomicWriteFile(filePath, next);
-  return true;
+    const joined = reordered.map((s) => s.text.trim()).join(`\n\n${indent}`);
+    const next = `${before}${joined}${after}`;
+    await atomicWriteFile(filePath, next);
+    return true;
+  });
 }
 
 export async function removeHtmlPromptResource(
@@ -773,19 +807,22 @@ export async function removeHtmlPromptResource(
   resourceId: string,
   options: { deleteFile?: boolean } = {},
 ): Promise<HtmlPromptResource | null> {
-  const workspace = await readWorkspace(workspaceRef);
-  const index = workspace.manifest.resources.findIndex((resource) => resource.id === resourceId);
-  if (index < 0) return null;
+  const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
+  return withWorkspaceLock(workspaceDir, async () => {
+    const workspace = await readWorkspace(workspaceRef);
+    const index = workspace.manifest.resources.findIndex((resource) => resource.id === resourceId);
+    if (index < 0) return null;
 
-  const [resource] = workspace.manifest.resources.splice(index, 1);
-  await writeHtmlPromptManifest(workspace.path, workspace.manifest);
-  await removeResourceReference(workspace.path, resource);
+    const [resource] = workspace.manifest.resources.splice(index, 1);
+    await writeHtmlPromptManifest(workspace.path, workspace.manifest);
+    await removeResourceReference(workspace.path, resource);
 
-  if (options.deleteFile) {
-    await unlink(path.join(workspace.path, resource.path)).catch(() => {});
-  }
+    if (options.deleteFile) {
+      await unlink(path.join(workspace.path, resource.path)).catch(() => {});
+    }
 
-  return resource;
+    return resource;
+  });
 }
 
 function resourceById(manifest: HtmlPromptManifest): Map<string, HtmlPromptResource> {

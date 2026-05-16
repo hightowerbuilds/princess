@@ -280,6 +280,52 @@ try {
       assertEq(moveReservedThrew, true, "moveHtmlPromptSection refuses to move the auto-managed resources section");
     },
   );
+
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "concurrent-writes"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      section("parallel resource writes preserve every resource");
+
+      const paths = getPaths();
+      await mkdir(paths.inboxDir, { recursive: true });
+      await createHtmlPromptWorkspace("Concurrency Drill", {});
+
+      const fixtureDir = path.join(tempRoot, "concurrent-writes-fixtures");
+      await mkdir(fixtureDir, { recursive: true });
+      const sourceA = path.join(fixtureDir, "alpha.md");
+      const sourceB = path.join(fixtureDir, "bravo.md");
+      const assetC = path.join(fixtureDir, "charlie.svg");
+      const tableD = path.join(fixtureDir, "delta.csv");
+      await writeFile(sourceA, "# alpha\n", "utf8");
+      await writeFile(sourceB, "# bravo\n", "utf8");
+      await writeFile(assetC, "<svg></svg>\n", "utf8");
+      await writeFile(tableD, "Name,Value\nx,1\ny,2\n", "utf8");
+
+      await Promise.all([
+        addHtmlPromptSource("concurrency-drill", sourceA, { name: "alpha" }),
+        addHtmlPromptSource("concurrency-drill", sourceB, { name: "bravo" }),
+        addHtmlPromptAsset("concurrency-drill", assetC, { name: "charlie", alt: "Charlie diagram" }),
+        importHtmlPromptTable("concurrency-drill", tableD, { name: "delta" }),
+      ]);
+
+      const resources = await listHtmlPromptResources("concurrency-drill");
+      const ids = resources.map((r) => r.id).sort();
+      assertEq(ids, ["alpha", "bravo", "charlie", "delta"], "all four parallel resources land in the manifest");
+
+      const promptHtml = await readHtmlPromptSource("concurrency-drill");
+      assert(promptHtml.includes('data-princess-id="alpha"'), "prompt.html contains alpha snippet");
+      assert(promptHtml.includes('data-princess-id="bravo"'), "prompt.html contains bravo snippet");
+      assert(promptHtml.includes('data-princess-id="charlie"'), "prompt.html contains charlie snippet");
+      assert(promptHtml.includes('data-princess-id="delta"'), "prompt.html contains delta snippet");
+
+      const lintIssues = await lintHtmlPromptWorkspace("concurrency-drill");
+      assertEq(lintIssues, [], "lint passes after parallel resource writes");
+    },
+  );
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
 }
