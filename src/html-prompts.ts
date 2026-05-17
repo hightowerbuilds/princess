@@ -18,6 +18,7 @@ export interface HtmlPromptResource {
   mediaType?: string;
   alt?: string;
   trust?: HtmlPromptTrust;
+  agent?: string;
   addedAt: string;
 }
 
@@ -165,13 +166,14 @@ function textToHtmlParagraphs(content: string): string {
 function sectionForContent(
   role: string,
   content: string,
-  options: { heading?: string; mode?: HtmlPromptSectionMode } = {},
+  options: { heading?: string; mode?: HtmlPromptSectionMode; agent?: string } = {},
 ): string {
   const safeRole = escapeHtml(role);
   const heading = escapeHtml(options.heading?.trim() || titleForRole(role));
   const body = options.mode === "html" ? content.trim() || "<p></p>" : textToHtmlParagraphs(content);
+  const agentAttr = options.agent?.trim() ? ` data-princess-agent="${escapeHtml(options.agent.trim())}"` : "";
 
-  return `<section data-princess-role="${safeRole}">
+  return `<section data-princess-role="${safeRole}"${agentAttr}>
       <h2>${heading}</h2>
       ${body}
     </section>`;
@@ -328,9 +330,13 @@ async function removeResourceReference(
   }
 }
 
+function agentAttr(resource: HtmlPromptResource): string {
+  return resource.agent ? ` data-princess-agent="${escapeHtml(resource.agent)}"` : "";
+}
+
 function sourceSnippet(resource: HtmlPromptResource): string {
   const title = escapeHtml(path.basename(resource.path));
-  return `<section data-princess-resource="source" data-princess-id="${escapeHtml(resource.id)}">
+  return `<section data-princess-resource="source" data-princess-id="${escapeHtml(resource.id)}"${agentAttr(resource)}>
         <h3>Source: ${title}</h3>
         <p data-princess-trust="${resource.trust ?? "untrusted"}">${resource.trust ?? "untrusted"} local source</p>
         <pre data-princess-include="${escapeHtml(resource.id)}"></pre>
@@ -339,7 +345,7 @@ function sourceSnippet(resource: HtmlPromptResource): string {
 
 function assetSnippet(resource: HtmlPromptResource): string {
   const alt = escapeHtml(resource.alt ?? path.basename(resource.path));
-  return `<figure data-princess-resource="asset" data-princess-id="${escapeHtml(resource.id)}">
+  return `<figure data-princess-resource="asset" data-princess-id="${escapeHtml(resource.id)}"${agentAttr(resource)}>
         <img src="${escapeHtml(resource.path)}" alt="${alt}">
         <figcaption>${alt}</figcaption>
       </figure>`;
@@ -347,7 +353,7 @@ function assetSnippet(resource: HtmlPromptResource): string {
 
 function tableSnippet(resource: HtmlPromptResource): string {
   const title = escapeHtml(path.basename(resource.path));
-  return ` <section data-princess-resource="table" data-princess-id="${escapeHtml(resource.id)}">
+  return ` <section data-princess-resource="table" data-princess-id="${escapeHtml(resource.id)}"${agentAttr(resource)}>
         <h3>Table: ${title}</h3>
         <div data-princess-include-html="${escapeHtml(resource.id)}"></div>
       </section>`;
@@ -420,7 +426,7 @@ export async function createHtmlPromptWorkspace(
 export async function addHtmlPromptSource(
   workspaceRef: string,
   sourcePath: string,
-  options: { name?: string; trust?: string } = {},
+  options: { name?: string; trust?: string; agent?: string } = {},
 ): Promise<HtmlPromptResource> {
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
   return withWorkspaceLock(workspaceDir, async () => {
@@ -435,6 +441,7 @@ export async function addHtmlPromptSource(
       originalPath: path.resolve(sourcePath),
       mediaType: mediaTypeFor(sourcePath),
       trust: normalizeTrust(options.trust),
+      ...(options.agent?.trim() ? { agent: options.agent.trim() } : {}),
       addedAt: nowIso(),
     };
 
@@ -448,7 +455,7 @@ export async function addHtmlPromptSource(
 export async function addHtmlPromptAsset(
   workspaceRef: string,
   assetPath: string,
-  options: { name?: string; alt?: string } = {},
+  options: { name?: string; alt?: string; agent?: string } = {},
 ): Promise<HtmlPromptResource> {
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
   return withWorkspaceLock(workspaceDir, async () => {
@@ -463,6 +470,7 @@ export async function addHtmlPromptAsset(
       originalPath: path.resolve(assetPath),
       mediaType: mediaTypeFor(assetPath),
       alt: options.alt?.trim() || path.basename(assetPath),
+      ...(options.agent?.trim() ? { agent: options.agent.trim() } : {}),
       addedAt: nowIso(),
     };
 
@@ -552,7 +560,7 @@ ${bodyHtml}
 export async function importHtmlPromptTable(
   workspaceRef: string,
   tablePath: string,
-  options: { name?: string; trust?: string } = {},
+  options: { name?: string; trust?: string; agent?: string } = {},
 ): Promise<HtmlPromptResource> {
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
   return withWorkspaceLock(workspaceDir, async () => {
@@ -587,6 +595,7 @@ export async function importHtmlPromptTable(
       originalPath: path.resolve(tablePath),
       mediaType: "text/html",
       trust: normalizeTrust(options.trust),
+      ...(options.agent?.trim() ? { agent: options.agent.trim() } : {}),
       addedAt: nowIso(),
     };
 
@@ -601,7 +610,7 @@ export async function upsertHtmlPromptSection(
   workspaceRef: string,
   role: string,
   content: string,
-  options: { heading?: string; mode?: HtmlPromptSectionMode } = {},
+  options: { heading?: string; mode?: HtmlPromptSectionMode; agent?: string } = {},
 ): Promise<void> {
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
   return withWorkspaceLock(workspaceDir, async () => {
@@ -617,6 +626,7 @@ export async function upsertHtmlPromptSection(
     const nextSection = sectionForContent(normalizedRole, content, {
       heading: options.heading,
       mode,
+      agent: options.agent,
     });
 
     const sectionRe = new RegExp(
@@ -658,21 +668,25 @@ export interface HtmlPromptSection {
   role: string;
   heading: string | null;
   html: string;
+  agent: string | null;
 }
 
 const RESERVED_SECTION_ROLES = new Set(["resources"]);
 
 function findRoleSections(html: string): Array<{
   role: string;
+  agent: string | null;
   startIdx: number;
   endIdx: number;
 }> {
   const openRe = /<section\b[^>]*data-princess-role=["']([^"']+)["'][^>]*>/g;
-  const results: Array<{ role: string; startIdx: number; endIdx: number }> = [];
+  const results: Array<{ role: string; agent: string | null; startIdx: number; endIdx: number }> = [];
   let match: RegExpExecArray | null;
 
   while ((match = openRe.exec(html)) !== null) {
     const role = match[1];
+    const agentMatch = match[0].match(/data-princess-agent=["']([^"']+)["']/);
+    const agent = agentMatch ? agentMatch[1] : null;
     const startIdx = match.index;
     const afterOpen = openRe.lastIndex;
 
@@ -695,7 +709,7 @@ function findRoleSections(html: string): Array<{
     }
 
     if (endIdx === -1) break;
-    results.push({ role, startIdx, endIdx });
+    results.push({ role, agent, startIdx, endIdx });
     openRe.lastIndex = endIdx;
   }
 
@@ -711,9 +725,9 @@ function headingFromSectionHtml(sectionHtml: string): string | null {
 export async function listHtmlPromptSections(workspaceRef: string): Promise<HtmlPromptSection[]> {
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
   const html = await readFile(promptPath(workspaceDir), "utf8");
-  return findRoleSections(html).map(({ role, startIdx, endIdx }) => {
+  return findRoleSections(html).map(({ role, agent, startIdx, endIdx }) => {
     const sectionHtml = html.slice(startIdx, endIdx);
-    return { role, heading: headingFromSectionHtml(sectionHtml), html: sectionHtml };
+    return { role, heading: headingFromSectionHtml(sectionHtml), html: sectionHtml, agent };
   });
 }
 

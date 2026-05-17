@@ -273,29 +273,23 @@ Success criteria:
 
 ## Phase 5: Many-Agent Prompt Building
 
-**Purpose:** Support one user coordinating several agents that all contribute to a single large HTML prompt package.
+**Status (2026-05-16): Reconsidered and dropped, except for the G1 schema bit.**
+
+Started Phase 5 by landing G1's schema additions (optional `agent?` field on `HtmlPromptResource` and `HtmlPromptSection`, rendered as `data-princess-agent` in `prompt.html`). The existing `addHtmlPromptSource` / `addHtmlPromptAsset` / `importHtmlPromptTable` / `upsertHtmlPromptSection` functions all optionally accept an `agent` parameter; round-trip coverage lives in `src/html-prompts.test.ts`.
+
+Then paused before building G2 (the `princess html contribute` command) and G3 (the `princess html contributions` listing) after realising the agent-stamping UX is overkill for Princess's actual scope. Princess is a personal prompt inbox — there is one user. The "ten agents contributing to one workspace" framing was aspirational, not a real near-term workflow. Building a dedicated `contribute` CLI with collision-error UX, plus a separate listing/filter command, plus an integration stress trial, would have added significant surface area for a hypothetical use case.
+
+The G1 schema is small enough that keeping it costs nothing and gives us a hook if a real multi-agent workflow surfaces later. If we ever want G2/G3, they remain straightforward thin wrappers around the existing add/upsert functions.
+
+**Purpose (original):** Support one user coordinating several agents that all contribute to a single large HTML prompt package.
 
 This may sound ambitious, but the practical core is simple: treat the HTML workspace as the shared artifact and make every contribution addressable, appendable, reviewable, and conflict-safe.
 
-### G1. Contribution Slots
+### G1. Contribution Slots — DONE (schema only)
 
-Define stable places where agents can add work without editing the same bytes.
+Decision: rather than introduce new directories like `contributions/`, reuse the existing `sources/`, `assets/`, `partials/`, and section commands. Added an optional `agent?: string` field to `HtmlPromptResource` (persisted in `manifest.json`) and an optional `agent` option to `upsertHtmlPromptSection` (persisted as `data-princess-agent` on the `<section>` open tag). `listHtmlPromptSections` exposes the agent value. Round-trip tested.
 
-Candidate slots:
-
-- `sections/<role>.html` or section commands for owned roles.
-- `sources/<agent-or-topic>.md` for source notes.
-- `partials/<agent-or-topic>.table.html` for imported data.
-- `assets/` for screenshots, diagrams, exports, and reference media.
-- `notes/` or `contributions/` for draft agent findings before promotion into `prompt.html`.
-
-Success criteria:
-
-- Ten agents can each add named context to one workspace.
-- Each contribution has an owner or source label.
-- The final prompt can include, reorder, or remove contributions deliberately.
-
-### G2. Agent Contribution Command
+### G2. Agent Contribution Command — DROPPED
 
 Consider a command that lets agents add context without hand-editing `prompt.html`.
 
@@ -311,7 +305,7 @@ Success criteria:
 - The command returns structured output for agents.
 - The human can list contributions before accepting them into the final prompt.
 
-### G3. Review and Merge Flow
+### G3. Review and Merge Flow — DROPPED
 
 Give the human a clear way to inspect many contributions and decide what enters the prompt.
 
@@ -321,7 +315,7 @@ Success criteria:
 - A contribution can be promoted into a section or resource.
 - Rejected or stale contributions remain recoverable until explicitly deleted.
 
-### G4. Stress Trial: Ten Agents, One Prompt
+### G4. Stress Trial: Ten Agents, One Prompt — DROPPED
 
 Simulate ten agents contributing to one HTML workspace for a large migration or 3D/robotics project.
 

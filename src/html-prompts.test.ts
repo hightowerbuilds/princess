@@ -377,6 +377,71 @@ try {
       await rm(lockPath, { force: true });
     },
   );
+
+  await withEnv(
+    {
+      PRINCESS_HOME: path.join(tempRoot, "agent-metadata"),
+      XDG_DATA_HOME: undefined,
+      XDG_CONFIG_HOME: undefined,
+    },
+    async () => {
+      section("agent metadata round-trips through resources and sections");
+
+      const paths = getPaths();
+      await mkdir(paths.inboxDir, { recursive: true });
+      await createHtmlPromptWorkspace("Ownership Drill", {});
+
+      const fixtureDir = path.join(tempRoot, "agent-metadata-fixtures");
+      await mkdir(fixtureDir, { recursive: true });
+      const notesPath = path.join(fixtureDir, "notes.md");
+      const wireframePath = path.join(fixtureDir, "wireframe.svg");
+      const featuresPath = path.join(fixtureDir, "features.csv");
+      await writeFile(notesPath, "# notes\n", "utf8");
+      await writeFile(wireframePath, "<svg></svg>\n", "utf8");
+      await writeFile(featuresPath, "Name,Value\na,1\n", "utf8");
+
+      await addHtmlPromptSource("ownership-drill", notesPath, { name: "alice-notes", agent: "alice" });
+      await addHtmlPromptAsset("ownership-drill", wireframePath, { name: "bob-wireframe", alt: "Wireframe", agent: "bob" });
+      await importHtmlPromptTable("ownership-drill", featuresPath, { name: "claire-features", agent: "claire" });
+      await upsertHtmlPromptSection("ownership-drill", "analysis", "Initial analysis pass.", { agent: "dana" });
+
+      const manifest = await readHtmlPromptManifest(path.join(paths.inboxDir, "ownership-drill"));
+      const byId = new Map(manifest.resources.map((r) => [r.id, r]));
+      assertEq(byId.get("alice-notes")?.agent, "alice", "source resource records its agent in manifest");
+      assertEq(byId.get("bob-wireframe")?.agent, "bob", "asset resource records its agent in manifest");
+      assertEq(byId.get("claire-features")?.agent, "claire", "table resource records its agent in manifest");
+
+      const html = await readHtmlPromptSource("ownership-drill");
+      assert(
+        html.includes('data-princess-id="alice-notes"') && html.includes('data-princess-agent="alice"'),
+        "source snippet renders data-princess-agent",
+      );
+      assert(
+        html.includes('data-princess-id="bob-wireframe"') && html.includes('data-princess-agent="bob"'),
+        "asset snippet renders data-princess-agent",
+      );
+      assert(
+        html.includes('data-princess-id="claire-features"') && html.includes('data-princess-agent="claire"'),
+        "table snippet renders data-princess-agent",
+      );
+
+      const sections = await listHtmlPromptSections("ownership-drill");
+      const analysis = sections.find((s) => s.role === "analysis");
+      assertEq(analysis?.agent, "dana", "section records its agent and is exposed via listHtmlPromptSections");
+
+      const noAgent = await addHtmlPromptSource("ownership-drill", notesPath, { name: "anon-notes" });
+      assertEq(noAgent.agent, undefined, "omitting agent leaves the field unset on the resource");
+      const htmlAfterAnon = await readHtmlPromptSource("ownership-drill");
+      const anonSnippetIdx = htmlAfterAnon.indexOf('data-princess-id="anon-notes"');
+      const anonSnippetTail = htmlAfterAnon.slice(anonSnippetIdx, htmlAfterAnon.indexOf("</section>", anonSnippetIdx));
+      assert(!anonSnippetTail.includes("data-princess-agent"), "anonymous resource snippet omits the agent attribute");
+
+      await upsertHtmlPromptSection("ownership-drill", "constraints", "no owner constraints", {});
+      const sectionsAfter = await listHtmlPromptSections("ownership-drill");
+      const constraints = sectionsAfter.find((s) => s.role === "constraints");
+      assertEq(constraints?.agent, null, "anonymous section reports agent: null");
+    },
+  );
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
 }
