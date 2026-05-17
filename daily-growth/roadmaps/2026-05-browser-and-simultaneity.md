@@ -205,37 +205,39 @@ Success criteria:
 
 ## Phase 3: Browser Assets and Screenshots
 
-**Purpose:** Make browser-originated visual context useful for HTML prompt packages.
+**Status (2026-05-16): Closed out via audit.** Almost every Phase 3 criterion was already met by the generic HTML asset substrate that shipped earlier (`addHtmlPromptAsset`, `addHtmlPromptSource`, `princess list` icons, TUI `[asset]` badge). The only real remaining gap was A1's alt-text requirement, which is now enforced. The browser-specific framing ("captured screenshots", "captured page text") remains deferred with Phase 2 — there's nothing to build there without a capture pipeline first.
 
-### A1. Screenshot Intake
+**Purpose (original):** Make browser-originated visual context useful for HTML prompt packages.
+
+### A1. Screenshot Intake — DONE
 
 Support browser screenshots as Princess assets.
 
 Success criteria:
 
-- Screenshot files land in the correct workspace `assets/` folder.
-- Alt text is required or strongly prompted.
-- Compiled JSON lists the screenshot as an attachment.
+- Screenshot files land in the correct workspace `assets/` folder. ✅ Already done by `addHtmlPromptAsset` — copies file into `<workspace>/assets/<id>.<ext>`, records resource in manifest with media type.
+- Alt text is required or strongly prompted. ✅ **2026-05-16:** `addHtmlPromptAsset` now throws if `alt` is missing or whitespace-only. CLI surfaces a clean one-line error: `error: --alt is required for add-asset so the model has a description of the image. Pass --alt "<short description>".` Trial 4's "Agent forgets `--alt`" stress signal is now a hard guardrail.
+- Compiled JSON lists the screenshot as an attachment. ✅ Already done (verified in Trial 4).
 
-### A2. Page Context Sources
+### A2. Page Context Sources — DONE (already met)
 
 Support saved page excerpts as trusted or untrusted sources.
 
 Success criteria:
 
-- Captured page text can be saved as a source file.
-- Trust label defaults to `untrusted`.
-- HTML prompt compile expands the source clearly.
+- Captured page text can be saved as a source file. ✅ `addHtmlPromptSource` already does this for any local file.
+- Trust label defaults to `untrusted`. ✅ Verified — `normalizeTrust(undefined)` returns `"untrusted"`.
+- HTML prompt compile expands the source clearly. ✅ Verified in Trial 3.
 
-### A3. Asset Library Surfacing
+### A3. Asset Library Surfacing — DONE (already met)
 
 Make shared `showcase/html prompts/assets/` style folders useful beyond demos.
 
 Success criteria:
 
-- Users can see asset filenames from the TUI/CLI.
-- Agents can copy files into shared or workspace assets intentionally.
-- Princess does not try to render images inside the TUI.
+- Users can see asset filenames from the TUI/CLI. ✅ `princess list` shows them with `🖼️` icon; TUI shows `[asset]` badge.
+- Agents can copy files into shared or workspace assets intentionally. ✅ Standard `cp` + `princess html add-asset` works; the shared `showcase/html prompts/assets/` pattern is documented in trial logs.
+- Princess does not try to render images inside the TUI. ✅ Intentional — assets are listed by filename only.
 
 ## Phase 4: Multi-Actor Coordination
 

@@ -316,3 +316,26 @@ Stepped back at that point and re-examined what the test infrastructure was actu
 - **G2 / G3 / G4 — dropped.** Documented in the roadmap as a deliberate scope reduction, not an oversight. If we ever do want them, they'd be straightforward thin wrappers around the existing add/upsert functions (which already accept `agent`).
 
 The honest meta-lesson: when an agent dispatched with "at minimum 7 scenarios" of test coverage comes back having written 30 assertions for a thin CLI wrapper, that's a signal the brief over-specified — not a signal to bloat the test file. Easier to right-scope the prompt than to merge generously-tested-but-overbuilt code back into a personal-tool codebase.
+
+## Phase 3 — Closed out via audit
+
+Circled back to Phase 3 (Browser Assets and Screenshots) and audited each success criterion against current code. Found that nearly all of it was already met by the generic HTML asset substrate that shipped earlier:
+
+- **A1 — Screenshot Intake:** assets-folder placement ✅ and JSON compile attachments ✅ already worked. The one real gap was alt text: `addHtmlPromptAsset` silently defaulted `alt` to the filename when omitted, which is useless for a model. Trial 4 had flagged this with "Agent forgets `--alt`" as a stress signal. Fixed: `addHtmlPromptAsset` now throws `--alt is required for add-asset so the model has a description of the image. Pass --alt "<short description>".` when alt is missing or whitespace-only. CLI propagates as a clean one-line `error: ...` and exit 1. Smoke-tested both error and success paths against the actual `princess` binary.
+- **A2 — Page Context Sources:** all three criteria already met. `addHtmlPromptSource` handles any local file; `normalizeTrust(undefined)` already returns `"untrusted"`; compile expansion verified in Trial 3.
+- **A3 — Asset Library Surfacing:** all three criteria already met. `princess list` shows assets with the `🖼️` icon; TUI uses `[asset]` badge; image rendering is intentionally not attempted.
+- The browser-specific framing ("captured screenshots", "captured page text") remains deferred with Phase 2 — there's nothing to build there without a capture pipeline first.
+
+Tests: `src/html-prompts.test.ts` grew 78 → 81 (+3 — the missing-alt error, the whitespace-only-alt rejection, and one assertion on the error message text). All 13 suites green. `bunx tsc --noEmit` clean.
+
+### Roadmap status after today
+
+| Phase | Status |
+|---|---|
+| Phase 1 Substrate (S1–S4) | ✅ Complete |
+| Phase 2 Browser Bridge | ⏸ Deferred (B3 only — `princess html open`) |
+| Phase 3 Browser Assets (A1–A3) | ✅ Complete (A1 alt-required added; A2/A3 were already met) |
+| Phase 4 Multi-Actor Coordination (M1–M3) | ✅ Complete |
+| Phase 5 Many-Agent Prompt Building | 🟡 G1 schema kept; G2–G4 dropped |
+
+The active roadmap is now fully resolved — every phase is either complete or deliberately deferred, with rationale recorded.

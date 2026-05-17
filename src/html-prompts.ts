@@ -457,6 +457,12 @@ export async function addHtmlPromptAsset(
   assetPath: string,
   options: { name?: string; alt?: string; agent?: string } = {},
 ): Promise<HtmlPromptResource> {
+  const alt = options.alt?.trim();
+  if (!alt) {
+    throw new Error(
+      `--alt is required for add-asset so the model has a description of the image. Pass --alt "<short description>".`,
+    );
+  }
   const workspaceDir = resolveHtmlPromptWorkspace(workspaceRef);
   return withWorkspaceLock(workspaceDir, async () => {
     const workspace = await readWorkspace(workspaceRef);
@@ -469,7 +475,7 @@ export async function addHtmlPromptAsset(
       path: resourcePath,
       originalPath: path.resolve(assetPath),
       mediaType: mediaTypeFor(assetPath),
-      alt: options.alt?.trim() || path.basename(assetPath),
+      alt,
       ...(options.agent?.trim() ? { agent: options.agent.trim() } : {}),
       addedAt: nowIso(),
     };

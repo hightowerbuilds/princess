@@ -113,6 +113,25 @@ try {
       assertEq(asset.path, "assets/wireframe.png", "copies asset into workspace");
       assertEq(asset.alt, "Mobile wireframe", "stores model-facing alt text");
 
+      let missingAltThrew = false;
+      let missingAltMessage = "";
+      try {
+        await addHtmlPromptAsset("web/landing-page-build", imagePath, { name: "no-alt" });
+      } catch (error) {
+        missingAltThrew = true;
+        missingAltMessage = error instanceof Error ? error.message : String(error);
+      }
+      assertEq(missingAltThrew, true, "add-asset throws when --alt is omitted");
+      assert(missingAltMessage.includes("--alt is required"), "missing alt error explains the requirement");
+
+      let blankAltThrew = false;
+      try {
+        await addHtmlPromptAsset("web/landing-page-build", imagePath, { name: "blank-alt", alt: "   " });
+      } catch {
+        blankAltThrew = true;
+      }
+      assertEq(blankAltThrew, true, "add-asset rejects whitespace-only alt as missing");
+
       section("importHtmlPromptTable");
 
       const pricingPath = path.join(fixtureDir, "pricing.csv");
