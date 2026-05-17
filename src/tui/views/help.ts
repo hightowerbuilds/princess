@@ -1,68 +1,74 @@
 import path from "node:path";
 import type { TuiState } from "../state.ts";
-import { bgGray, white, black, cyan, dim, green, yellow } from "../colors.ts";
-import { truncateEnd } from "../typeset-compose.ts";
+import { themed } from "../theme.ts";
+import { panel, truncateEnd } from "../typeset-compose.ts";
 import { getPaths } from "../../paths.ts";
 
 function statusLine(label: string, value: string): string {
-  return `${dim(label)} ${value}`;
+  return `${themed.dim(label)} ${value}`;
 }
 
 export function renderHelp(state: TuiState, cols: number, rows: number): string[] {
   const paths = getPaths();
-  const lines: string[] = [];
+  const body: string[] = [];
   const screen = state.state.screen;
   const currentFile = state.state.editor.file;
   const currentDir = state.state.inbox.directory;
 
-  lines.push(bgGray(white(` Help & Status ${"".padEnd(Math.max(0, cols - 15))} `)));
-  lines.push(dim(" Princess keeps prompts as local Markdown files. Press Esc to return."));
-  lines.push("");
+  const innerHeight = Math.max(rows - 3, 5);
 
-  lines.push(green(" Navigation"));
-  lines.push(statusLine(" [Ctrl+/]", "Open this screen from anywhere"));
-  lines.push(statusLine(" [Esc]", "Close help and return"));
-  lines.push(statusLine(" [Enter]", "Open or preview the selected item"));
-  lines.push("");
+  body.push(themed.dim(" Princess keeps prompts as local Markdown files."));
+  body.push("");
 
-  lines.push(yellow(" Inbox"));
-  lines.push(statusLine(" [/] ", "Search prompts by title, metadata, path, or body"));
-  lines.push(statusLine(" [o]", "Open an HTML workspace in the default browser"));
-  lines.push(statusLine(" [c]", "Copy a prompt file"));
-  lines.push(statusLine(" [d]", "Delete a prompt file"));
-  lines.push(statusLine(" [q]", "Quit from the inbox"));
-  lines.push("");
+  body.push(themed.title(" Navigation"));
+  body.push(statusLine(" [Ctrl+/]", "Open this screen from anywhere"));
+  body.push(statusLine(" [Esc]", "Close help and return"));
+  body.push(statusLine(" [Enter]", "Open or preview the selected item"));
+  body.push("");
 
-  lines.push(cyan(" Editor"));
-  lines.push(statusLine(" [Ctrl+S]", "Save the current prompt"));
-  lines.push(statusLine(" [Ctrl+R]", "Open the latest diff"));
-  lines.push(statusLine(" [Ctrl+P]", "Browse and restore revisions"));
-  lines.push(statusLine(" [Ctrl+C]", "Copy the current buffer"));
-  lines.push(statusLine(" [o]", "Open read-only HTML in the default browser"));
-  lines.push("");
+  body.push(themed.title(" Inbox"));
+  body.push(statusLine(" [/] ", "Search prompts by title, metadata, path, or body"));
+  body.push(statusLine(" [o]", "Open an HTML workspace in the default browser"));
+  body.push(statusLine(" [c]", "Copy a prompt file"));
+  body.push(statusLine(" [d]", "Delete a prompt file"));
+  body.push(statusLine(" [q]", "Quit from the inbox"));
+  body.push("");
 
-  lines.push(green(" Revisions"));
-  lines.push(statusLine(" [Enter]", "Preview a saved revision"));
-  lines.push(statusLine(" [r]", "Restore the previewed revision into the editor"));
-  lines.push(statusLine(" [v]", "Save a revision as a new file (Variant)"));
-  lines.push(statusLine(" [c]", "Copy a revision snapshot"));
-  lines.push("");
+  body.push(themed.title(" Editor"));
+  body.push(statusLine(" [Ctrl+S]", "Save the current prompt"));
+  body.push(statusLine(" [Ctrl+R]", "Open the latest diff"));
+  body.push(statusLine(" [Ctrl+P]", "Browse and restore revisions"));
+  body.push(statusLine(" [Ctrl+C]", "Copy the current buffer"));
+  body.push(statusLine(" [o]", "Open read-only HTML in the default browser"));
+  body.push("");
 
-  lines.push(yellow(" Trust"));
-  lines.push(statusLine(" Inbox", truncateEnd(paths.inboxDir, Math.max(0, cols - 12))));
-  lines.push(statusLine(" Config", truncateEnd(paths.configDir, Math.max(0, cols - 12))));
-  lines.push(statusLine(" Data", truncateEnd(paths.dataDir, Math.max(0, cols - 12))));
-  lines.push(statusLine(" Agent", truncateEnd(paths.agentFile, Math.max(0, cols - 12))));
-  lines.push(statusLine(" Mode", screen === "help" ? "Help" : screen));
-  lines.push(statusLine(" File", currentFile ?? "None open"));
-  lines.push(statusLine(" Folder", currentDir ? path.join(paths.inboxDir, currentDir) : paths.inboxDir));
-  lines.push("");
+  body.push(themed.title(" Revisions"));
+  body.push(statusLine(" [Enter]", "Preview a saved revision"));
+  body.push(statusLine(" [r]", "Restore the previewed revision into the editor"));
+  body.push(statusLine(" [v]", "Save a revision as a new file (Variant)"));
+  body.push(statusLine(" [c]", "Copy a revision snapshot"));
+  body.push("");
 
-  lines.push(dim(" [Esc] Back to where you were  [Enter] Close  [Ctrl+/] Toggle "));
+  body.push(themed.title(" Trust"));
+  body.push(statusLine(" Inbox", truncateEnd(paths.inboxDir, Math.max(0, cols - 16))));
+  body.push(statusLine(" Config", truncateEnd(paths.configDir, Math.max(0, cols - 16))));
+  body.push(statusLine(" Data", truncateEnd(paths.dataDir, Math.max(0, cols - 16))));
+  body.push(statusLine(" Agent", truncateEnd(paths.agentFile, Math.max(0, cols - 16))));
+  body.push(statusLine(" Mode", screen === "help" ? "Help" : screen));
+  body.push(statusLine(" File", currentFile ?? "None open"));
+  body.push(statusLine(" Folder", currentDir ? path.join(paths.inboxDir, currentDir) : paths.inboxDir));
 
-  while (lines.length < rows - 2) {
-    lines.push("");
-  }
+  while (body.length < innerHeight) body.push("");
 
-  return lines;
+  return panel(body, cols, {
+    border: "rounded",
+    title: "Help & Status",
+    hotkeys: "esc back · ↵ close · ctrl+/ toggle",
+    borderColor: themed.border,
+    borderFocusColor: themed.borderFocus,
+    focused: true,
+    titleStyle: themed.title,
+    hotkeyStyle: themed.dim,
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+  });
 }

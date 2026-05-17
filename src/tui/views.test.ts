@@ -139,7 +139,7 @@ section("renderInbox empty state");
   const lines = renderInbox(state, 80, 24);
   assert(lines.some((line) => line.includes("Welcome to Princess.")), "shows onboarding welcome");
   assert(lines.some((line) => line.includes("create-prompt")), "shows create prompt guidance");
-  assert(lines.some((line) => line.includes("Help")), "mentions help shortcut");
+  assert(lines.some((line) => line.includes("help")), "mentions help shortcut (panel hotkey strip)");
 }
 
 section("renderInbox delete confirmation");
@@ -275,10 +275,10 @@ section("renderRevisions");
   ]);
 
   const lines = renderRevisions(state, 80, 24);
-  assert(lines.some((line) => line.includes("Revisions: history-prompt.md")), "shows revisions title");
+  assert(lines.some((line) => line.includes("Revisions — history-prompt.md")), "shows revisions title in panel border");
   assert(lines.some((line) => line.includes("2026-05-10")), "shows revision timestamp");
   assert(lines.some((line) => line.includes("History Prompt")), "shows revision preview");
-  assert(lines.some((line) => line.includes("[Enter] Preview")), "shows preview shortcut");
+  assert(lines.some((line) => line.includes("preview")), "shows preview shortcut (panel hotkey strip)");
 }
 
 section("renderRevisions shows time as well as date");
@@ -332,9 +332,9 @@ section("renderRevisionPreview");
   );
 
   const lines = renderRevisionPreview(state, 80, 24);
-  assert(lines.some((line) => line.includes("Preview: 2026-05-10T00-00-00-000Z.md")), "shows preview title");
+  assert(lines.some((line) => line.includes("Preview — 2026-05-10T00-00-00-000Z.md")), "shows preview title in panel border");
   assert(lines.some((line) => line.includes("History Preview")), "shows revision content");
-  assert(lines.some((line) => line.includes("[r] Restore")), "shows restore shortcut");
+  assert(lines.some((line) => line.includes("restore")), "shows restore shortcut (panel hotkey strip)");
 }
 
 section("renderHelp");

@@ -102,10 +102,17 @@ export function showCursor(): void {
 }
 
 export function enableMouse(): void {
-  write("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+  // ?1000h press/release (used for scroll-wheel page nav)
+  // ?1006h SGR extended encoding
+  // Intentionally NOT enabling ?1002h (motion-while-button-held). It
+  // floods stdin during clicks and drags, none of which we consume —
+  // we only react to wheel events. Keeping motion off makes the input
+  // stream calm enough that incomplete-sequence handling is robust.
+  write("\x1b[?1000h\x1b[?1006h");
 }
 
 export function disableMouse(): void {
+  // Send the ?1002l reset too, in case a previous run left it on.
   write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
 }
 

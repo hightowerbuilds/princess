@@ -1,6 +1,6 @@
 import type { TuiState } from "../state.ts";
-import { bold, dim, green, red, cyan } from "../colors.ts";
-import { truncateEnd } from "../typeset-compose.ts";
+import { themed, diffAdded, diffRemoved } from "../theme.ts";
+import { panel, truncateEnd } from "../typeset-compose.ts";
 import path from "node:path";
 
 function splitLines(text: string): string[] {
@@ -30,10 +30,10 @@ function renderDiffLines(oldText: string, newText: string, width: number): strin
   }
 
   const lines: string[] = [];
-  const visibleWidth = Math.max(12, width - 8);
+  const visibleWidth = Math.max(12, width - 12);
 
   const pushContext = (line: string) => {
-    lines.push(dim(`   ${truncateEnd(line, visibleWidth)}`));
+    lines.push(themed.dim(`   ${truncateEnd(line, visibleWidth)}`));
   };
 
   for (let i = 0; i < prefix; i++) {
@@ -49,10 +49,10 @@ function renderDiffLines(oldText: string, newText: string, width: number): strin
     const newLine = newMiddle[i];
 
     if (oldLine != null) {
-      lines.push(red(` - ${truncateEnd(oldLine, visibleWidth)}`));
+      lines.push(diffRemoved(` - ${truncateEnd(oldLine, visibleWidth)}`));
     }
     if (newLine != null) {
-      lines.push(green(` + ${truncateEnd(newLine, visibleWidth)}`));
+      lines.push(diffAdded(` + ${truncateEnd(newLine, visibleWidth)}`));
     }
   }
 
@@ -60,7 +60,7 @@ function renderDiffLines(oldText: string, newText: string, width: number): strin
     pushContext(oldLines[oldLines.length - suffix + i]);
   }
 
-  return lines.length > 0 ? lines : [dim("   (no differences)")];
+  return lines.length > 0 ? lines : [themed.dim("   (no differences)")];
 }
 
 export function renderDiff(state: TuiState, cols: number, rows: number): string[] {
@@ -70,18 +70,24 @@ export function renderDiff(state: TuiState, cols: number, rows: number): string[
   const revisionPath = state.state.diff.revisionPath;
   const filename = currentFile ? path.basename(currentFile) : "Untitled";
 
-  const lines: string[] = [];
-  lines.push(cyan(bold(` Diff: ${filename.padEnd(Math.max(0, cols - 7))} `)));
-  lines.push(dim(` ${revisionPath ? `vs ${path.basename(revisionPath)}` : "revision"}`));
-  lines.push("");
-  lines.push(...renderDiffLines(oldContent, newContent, cols));
+  const innerHeight = Math.max(rows - 3, 5);
+  const body: string[] = [];
 
-  while (lines.length < rows - 2) {
-    lines.push("");
-  }
+  body.push(themed.dim(` ${revisionPath ? `vs ${path.basename(revisionPath)}` : "revision"}`));
+  body.push("");
+  body.push(...renderDiffLines(oldContent, newContent, cols));
 
-  lines.push("");
-  lines.push(dim(" [Esc] Back to editor   [Ctrl+/] Help "));
+  while (body.length < innerHeight) body.push("");
 
-  return lines;
+  return panel(body, cols, {
+    border: "rounded",
+    title: `Diff — ${filename}`,
+    hotkeys: "esc back to editor",
+    borderColor: themed.border,
+    borderFocusColor: themed.borderFocus,
+    focused: true,
+    titleStyle: themed.title,
+    hotkeyStyle: themed.dim,
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+  });
 }

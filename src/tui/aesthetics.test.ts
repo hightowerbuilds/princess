@@ -12,10 +12,6 @@ import {
   focusDimLevel,
   focusDimLine,
   depthBlur,
-  stagePalette,
-  stageText,
-  stageAccent,
-  STAGE_PALETTES,
   statusBar,
   formatElapsed,
 } from "./aesthetics.ts";
@@ -227,51 +223,6 @@ section("depthBlur");
 {
   const d2 = depthBlur("Hello", 2);
   assert(d2.length > 0, "depth 2 produces output");
-}
-
-// ── Color Theming ────────────────────────────────────────────────────────
-
-section("stagePalette");
-
-{
-  const stages = ["welcome", "scanning", "inference", "review", "applying", "complete", "error"];
-  for (const stage of stages) {
-    const palette = stagePalette(stage);
-    assert(palette.primary.length === 3, `${stage} has primary RGB`);
-    assert(palette.secondary.length === 3, `${stage} has secondary RGB`);
-    assert(palette.accent.length === 3, `${stage} has accent RGB`);
-    assert(palette.muted.length === 3, `${stage} has muted RGB`);
-  }
-}
-
-{
-  // Unknown stage falls back to welcome
-  const unknown = stagePalette("nonexistent");
-  const welcome = stagePalette("welcome");
-  assertEq(unknown, welcome, "unknown stage falls back to welcome");
-}
-
-{
-  // Different stages have different palettes
-  const scanning = stagePalette("scanning");
-  const inference = stagePalette("inference");
-  assert(
-    scanning.primary[0] !== inference.primary[0] ||
-    scanning.primary[1] !== inference.primary[1],
-    "scanning and inference have different primaries",
-  );
-}
-
-section("stageText / stageAccent");
-
-{
-  const t = stageText("scanning", "hello");
-  assert(t.includes("hello"), "stageText preserves content");
-}
-
-{
-  const a = stageAccent("review", "warning");
-  assert(a.includes("warning"), "stageAccent preserves content");
 }
 
 // ── Status Bar ───────────────────────────────────────────────────────────

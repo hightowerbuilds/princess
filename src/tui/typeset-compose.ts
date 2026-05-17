@@ -347,6 +347,125 @@ function normalizeSpacing(value?: number | Partial<Spacing>): Spacing {
   return { top: value.top ?? 0, right: value.right ?? 0, bottom: value.bottom ?? 0, left: value.left ?? 0 };
 }
 
+// ── Titled Panel ─────────────────────────────────────────────────────────
+//
+// A `panel()` is a `box()` whose top border carries an inline title and
+// whose bottom border can carry a hotkey strip. Models btop's panel
+// idiom: `╭─┤ Title ├──────────╮` on top, `╰─┤ q quit ├─╯` on bottom.
+
+export interface PanelOptions extends BoxOptions {
+  /** Inline title on the top border. Omitted glyph if it doesn't fit. */
+  title?: string;
+  /** Title placement on the top border. Default `"left"`. */
+  titleAlign?: "left" | "center";
+  /** Hotkey strip on the bottom border (e.g. " q quit  c copy "). */
+  hotkeys?: string;
+  /**
+   * Whether this panel is the focused/active one. When true, the panel
+   * uses `borderFocusColor`/`titleFocusColor` instead of the baseline
+   * border/title colors.
+   */
+  focused?: boolean;
+  /** Style for the title text. Default: bold + caller-provided color. */
+  titleStyle?: (text: string) => string;
+  /** Style for the hotkey text. Default: caller-provided color. */
+  hotkeyStyle?: (text: string) => string;
+  /** Border color used when `focused: true`. Falls back to `borderColor`. */
+  borderFocusColor?: (text: string) => string;
+}
+
+/** Bracket glyphs flanking inline titles and hotkeys. */
+const TITLE_BRACKET_LEFT = "┤";  // ┤
+const TITLE_BRACKET_RIGHT = "├"; // ├
+
+/**
+ * Render content inside a bordered panel with an optional inline title
+ * on the top edge and an optional hotkey strip on the bottom edge.
+ *
+ * Falls back to a plain `box()` (no cut-ins) when:
+ *   - `border: "none"` is set
+ *   - the panel is too narrow for the title to fit
+ *
+ * The cut-in is built so the bracket glyphs render in the border color
+ * while the title text uses its own (typically bolder/brighter) style.
+ */
+export function panel(content: string[], totalWidth: number, options?: PanelOptions): string[] {
+  const borderStyle = options?.border ?? "rounded";
+  const baseBorderColor = options?.borderColor ?? ((s) => s);
+  const focusBorderColor = options?.borderFocusColor ?? baseBorderColor;
+  const borderColor = options?.focused ? focusBorderColor : baseBorderColor;
+
+  // Defer to box() if there's no border to decorate.
+  if (borderStyle === "none") {
+    return box(content, totalWidth, { ...options, border: "none" });
+  }
+
+  // Start with a plain bordered box, then rewrite its first/last lines
+  // to splice in the title and hotkeys.
+  const baseLines = box(content, totalWidth, {
+    ...options,
+    border: borderStyle,
+    borderColor,
+  });
+
+  if (baseLines.length < 2) return baseLines;
+
+  const b = BORDER_CHARS[borderStyle as Exclude<BorderStyle, "none">];
+  const margin = normalizeSpacing(options?.margin);
+  const marginL = " ".repeat(margin.left);
+
+  // Recompute inner width the same way box() does.
+  const pad = normalizeSpacing(options?.padding);
+  const chrome = margin.left + margin.right + 2 + pad.left + pad.right;
+  let contentWidth = totalWidth - chrome;
+  if (options?.maxWidth != null) contentWidth = Math.min(contentWidth, options.maxWidth);
+  contentWidth = Math.max(contentWidth, 1);
+  const innerWidth = contentWidth + pad.left + pad.right;
+
+  const titleStyle = options?.titleStyle ?? ((s) => s);
+  const hotkeyStyle = options?.hotkeyStyle ?? ((s) => s);
+
+  // ── Top border with optional title cut-in ─────────────────────────────
+  const topIdx = margin.top; // box() emits margin.top blank lines before the top edge
+  if (options?.title) {
+    const titleCore = ` ${options.title} `;
+    const cutInWidth = titleCore.length + 2; // +2 for the bracket glyphs
+    if (cutInWidth + 4 <= innerWidth) {
+      const align = options.titleAlign ?? "left";
+      const leftFill = align === "center"
+        ? Math.max(1, Math.floor((innerWidth - cutInWidth) / 2))
+        : 1;
+      const rightFill = innerWidth - cutInWidth - leftFill;
+      const top =
+        marginL +
+        borderColor(b.tl + b.h.repeat(leftFill) + TITLE_BRACKET_LEFT) +
+        titleStyle(titleCore) +
+        borderColor(TITLE_BRACKET_RIGHT + b.h.repeat(rightFill) + b.tr);
+      baseLines[topIdx] = top;
+    }
+  }
+
+  // ── Bottom border with optional hotkeys cut-in ────────────────────────
+  const botIdx = baseLines.length - 1 - margin.bottom;
+  if (options?.hotkeys) {
+    const keyCore = ` ${options.hotkeys} `;
+    const cutInWidth = keyCore.length + 2;
+    if (cutInWidth + 4 <= innerWidth) {
+      // Right-aligned, btop-style.
+      const rightFill = 1;
+      const leftFill = innerWidth - cutInWidth - rightFill;
+      const bot =
+        marginL +
+        borderColor(b.bl + b.h.repeat(leftFill) + TITLE_BRACKET_LEFT) +
+        hotkeyStyle(keyCore) +
+        borderColor(TITLE_BRACKET_RIGHT + b.h.repeat(rightFill) + b.br);
+      baseLines[botIdx] = bot;
+    }
+  }
+
+  return baseLines;
+}
+
 // ── Hanging Indent ───────────────────────────────────────────────────────
 
 /**

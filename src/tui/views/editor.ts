@@ -1,7 +1,7 @@
 import type { TuiState } from "../state.ts";
-import { dim, bgGray, white, black, cyan, green, yellow } from "../colors.ts";
+import { themed, statusStyle } from "../theme.ts";
 import { prepare, layout, materializeToStrings, stringWidth } from "../typeset.ts";
-import { box } from "../typeset-compose.ts";
+import { panel } from "../typeset-compose.ts";
 import { dropShadow } from "../aesthetics.ts";
 import path from "node:path";
 
@@ -16,36 +16,39 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
   const parsed = state.editorParsedPrompt();
 
   // ── Header Card ────────────────────────────────────────────────────────
+  // Filename moved into the panel title; metadata + save indicator
+  // remain as body lines.
   const headerLines: string[] = [];
-  headerLines.push(`Editor: ${filename}`);
-  
+
   if (parsed.hasFrontmatter) {
     const meta = parsed.metadata;
-    const status = meta.status ? (meta.status === "ready" ? green(`[${meta.status}]`) : meta.status === "draft" ? yellow(`[${meta.status}]`) : cyan(`[${meta.status}]`)) : "";
-    const category = meta.category ? dim(`[${meta.category}]`) : "";
-    const updated = meta.updatedAt ? dim(`updated ${meta.updatedAt.slice(0, 10)}`) : "";
+    const status = meta.status ? statusStyle(meta.status, `[${meta.status}]`) : "";
+    const category = meta.category ? themed.dim(`[${meta.category}]`) : "";
+    const updated = meta.updatedAt ? themed.dim(`updated ${meta.updatedAt.slice(0, 10)}`) : "";
     headerLines.push(`${status} ${category} ${updated}`.trim());
   }
-  
+
   const readOnly = state.state.editor.readOnly;
   const statusIndicator = readOnly
     ? "[read-only]"
     : saveState === "conflict"
-      ? yellow("[external change]")
+      ? themed.accent("[external change]")
       : saveState === "saving"
         ? "[saving]"
         : saveState === "dirty"
           ? "[dirty]"
           : saveState === "error"
-            ? "[save error]"
+            ? themed.ember("[save error]")
             : "[saved]";
-  headerLines.push(saveState === "conflict" ? statusIndicator : dim(statusIndicator));
+  headerLines.push(saveState === "conflict" ? statusIndicator : themed.dim(statusIndicator));
 
-  const headerCard = box(headerLines, cols - 1, {
-    border: "single",
+  const headerCard = panel(headerLines, cols - 1, {
+    border: "rounded",
+    title: `Editor — ${filename}`,
     padding: { left: 1, right: 1, top: 0, bottom: 0 },
-    borderColor: white,
-    contentStyle: (s) => bgGray(white(s))
+    borderColor: themed.border,
+    borderFocusColor: themed.borderFocus,
+    titleStyle: themed.title,
   });
 
   const headerCardWithShadow = dropShadow(headerCard, cols - 1);
@@ -104,19 +107,41 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
 
     if (chunks.length === 0) chunks = [""];
 
-    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-      const chunk = chunks[chunkIdx];
-      
-      if (isCursorLine && chunk.includes("\u200B")) {
-        cursorVisualIdx = visualBuffer.length;
-        const cleaned = chunk.replace("\u200B", "");
-        const cursorMarkerIdx = chunk.indexOf("\u200B");
-        const textBeforeCursor = chunk.slice(0, cursorMarkerIdx);
-        const visualCol = stringWidth(textBeforeCursor);
+    // \u2500\u2500 Locate the cursor's true visual chunk \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // The marker is a zero-width space. During wrap it can stick to
+    // either side of a line break: it commonly ends up at the *end*
+    // of the previous chunk even though the cursor character itself
+    // sits at the start of the next chunk. If we trusted the marker's
+    // chunk blindly, the row highlight (which follows the marker)
+    // would lag one row behind the hardware cursor (which follows the
+    // cursor character). Detect that case and attribute the cursor to
+    // the next chunk at column 0.
+    let cursorChunkIdx = -1;
+    let cursorCol = 0;
+    if (isCursorLine) {
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const idx = chunks[ci].indexOf("\u200B");
+        if (idx < 0) continue;
+        const trailing = idx === chunks[ci].length - 1;
+        const hasNext = ci + 1 < chunks.length;
+        if (trailing && hasNext) {
+          cursorChunkIdx = ci + 1;
+          cursorCol = 0;
+        } else {
+          cursorChunkIdx = ci;
+          cursorCol = stringWidth(chunks[ci].slice(0, idx));
+        }
+        break;
+      }
+    }
 
-        visualBuffer.push({ text: cleaned, isCursor: true, cursorCol: visualCol });
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+      const cleaned = chunks[chunkIdx].replace("\u200B", "");
+      if (chunkIdx === cursorChunkIdx) {
+        cursorVisualIdx = visualBuffer.length;
+        visualBuffer.push({ text: cleaned, isCursor: true, cursorCol });
       } else {
-        visualBuffer.push({ text: chunk, isCursor: false });
+        visualBuffer.push({ text: cleaned, isCursor: false });
       }
     }
   }
@@ -134,19 +159,23 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
 
   const visibleBodyLines: string[] = [];
   for (let i = startIdx; i < endIdx; i++) {
-    visibleBodyLines.push(visibleBodyLines.length === (cursorVisualIdx - startIdx) ? 
-        bgGray(white(visualBuffer[i].text)) : visualBuffer[i].text);
+    visibleBodyLines.push(
+      visibleBodyLines.length === (cursorVisualIdx - startIdx)
+        ? themed.selection(visualBuffer[i].text)
+        : visualBuffer[i].text,
+    );
   }
 
   while (visibleBodyLines.length < editorHeight) {
     visibleBodyLines.push("");
   }
 
-  const bodyCard = box(visibleBodyLines, cols - 1, {
-    border: "single",
+  const bodyCard = panel(visibleBodyLines, cols - 1, {
+    border: "rounded",
     padding: { left: 1, right: 1, top: 0, bottom: 0 },
-    borderColor: white,
-    contentStyle: (s) => bgGray(white(s))
+    borderColor: themed.border,
+    borderFocusColor: themed.borderFocus,
+    focused: true,
   });
   const bodyCardWithShadow = dropShadow(bodyCard, cols - 1);
 
@@ -170,12 +199,12 @@ export function renderEditor(state: TuiState, cols: number, rows: number): { lin
   finalLines.push("");
   if (saveState === "conflict") {
     const conflictHints = ` File changed on disk.  [Ctrl+S] Overwrite  [Esc] Discard your edits  Ln ${cLine + 1}, Col ${cCol + 1} `;
-    finalLines.push(yellow(conflictHints));
+    finalLines.push(themed.accent(conflictHints));
   } else {
     const footerHints = readOnly
       ? ` [Esc] Inbox  [o] Browser  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `
       : ` [Esc] Inbox  [Ctrl+S] Save  [Ctrl+R] Diff  [Ctrl+P] Revisions  [Ctrl+C] Copy  [Ctrl+/] Help  Ln ${cLine + 1}, Col ${cCol + 1} `;
-    finalLines.push(dim(footerHints));
+    finalLines.push(themed.dim(footerHints));
   }
 
   return { lines: finalLines, cursor: hardwareCursor };

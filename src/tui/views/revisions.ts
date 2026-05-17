@@ -1,6 +1,6 @@
 import type { TuiState } from "../state.ts";
-import { dim, bgGray, white, black, cyan } from "../colors.ts";
-import { truncateEnd } from "../typeset-compose.ts";
+import { themed } from "../theme.ts";
+import { panel, truncateEnd } from "../typeset-compose.ts";
 import { parsePromptDocument } from "../../prompts.ts";
 import { formatRevisionTimestamp } from "../../revisions.ts";
 import path from "node:path";
@@ -10,40 +10,44 @@ export function renderRevisions(state: TuiState, cols: number, rows: number): st
   const cursor = state.state.revisions.cursor;
   const offset = state.state.revisions.scrollOffset;
   const filename = state.state.editor.file ? path.basename(state.state.editor.file) : "Untitled";
-  const listHeight = Math.max(rows - 10, 5);
 
-  const lines: string[] = [];
-  lines.push(bgGray(white(` Revisions: ${filename.padEnd(Math.max(0, cols - 12))} `)));
-  lines.push(dim(" [Enter] Preview   [v] Save as Variant   [c] Copy   [Esc] Back   [Ctrl+/] Help "));
-  lines.push("");
+  // Panel takes 2 rows for borders; leave one trailing line for breathing room.
+  const innerHeight = Math.max(rows - 3, 5);
+  const body: string[] = [];
 
   if (revisions.length === 0) {
-    lines.push(dim(" No saved revisions yet."));
+    body.push("");
+    body.push(themed.dim(" No saved revisions yet."));
   } else {
-    for (let i = offset; i < Math.min(revisions.length, offset + listHeight); i++) {
+    for (let i = offset; i < Math.min(revisions.length, offset + innerHeight); i++) {
       const revision = revisions[i];
       const parsed = parsePromptDocument(revision.content);
       const preview = parsed.preview || parsed.metadata.title || "";
       const timestamp = formatRevisionTimestamp(revision.createdAt);
-      const deltas = revision.added != null || revision.removed != null 
+      const deltas = revision.added != null || revision.removed != null
         ? ` (${revision.added ? `+${revision.added}` : ""} ${revision.removed ? `-${revision.removed}` : ""})`.trim()
         : "";
       const row = `${timestamp}${deltas} ${preview ? `- ${preview}` : ""}`.trim();
 
       if (i === cursor) {
-        lines.push(bgGray(white(` > ${truncateEnd(row, Math.max(0, cols - 3)).padEnd(Math.max(0, cols - 2))}`)));
+        body.push(themed.selection(` > ${truncateEnd(row, Math.max(0, cols - 8))}`));
       } else {
-        lines.push(`   ${truncateEnd(row, Math.max(0, cols - 3))}`);
+        body.push(`   ${truncateEnd(row, Math.max(0, cols - 8))}`);
       }
     }
   }
 
-  while (lines.length < rows - 2) {
-    lines.push("");
-  }
+  while (body.length < innerHeight) body.push("");
 
-  lines.push("");
-  lines.push(dim(" [Enter] Preview   [r] Restore from preview   [v] Variant   [c] Copy   [Esc] Back "));
-
-  return lines;
+  return panel(body, cols, {
+    border: "rounded",
+    title: `Revisions — ${filename}`,
+    hotkeys: "↵ preview · r restore · v variant · c copy · esc back",
+    borderColor: themed.border,
+    borderFocusColor: themed.borderFocus,
+    focused: true,
+    titleStyle: themed.title,
+    hotkeyStyle: themed.dim,
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+  });
 }

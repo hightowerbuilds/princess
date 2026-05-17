@@ -17,6 +17,7 @@ const suites: TestSuite[] = [
   { name: "typeset", command: ["bun", "run", "src/tui/typeset.test.ts"] },
   { name: "motion", command: ["bun", "--conditions=browser", "run", "src/tui/motion.test.ts"] },
   { name: "aesthetics", command: ["bun", "run", "src/tui/aesthetics.test.ts"] },
+  { name: "theme", command: ["bun", "run", "src/tui/theme.test.ts"] },
 ];
 
 const failed: string[] = [];

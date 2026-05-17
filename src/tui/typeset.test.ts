@@ -23,6 +23,7 @@ import {
   justifyLine,
   justifiedLayout,
   box,
+  panel,
   hangingIndent,
   breakpoint,
   breakpointName,
@@ -742,6 +743,112 @@ function variance(values: number[]): number {
   const v = values.slice(0, -1);
   const mean = v.reduce((a, b) => a + b, 0) / v.length;
   return v.reduce((sum, x) => sum + (x - mean) ** 2, 0) / v.length;
+}
+
+// ── panel() — titled / hotkeyed bordered panel ──────────────────────────
+
+section("panel — titled top border");
+
+{
+  const lines = panel(["hi"], 30, { title: "Inbox", border: "rounded", padding: 1 });
+  // First line should contain the title text bracketed by ┤ ├
+  const top = lines[0];
+  assert(top.includes("┤ Inbox ├"), `top border contains "┤ Inbox ├" cut-in (got ${JSON.stringify(top)})`);
+  assert(top.startsWith("╭"), "top border still starts with the rounded TL corner");
+  assert(top.endsWith("╮"), "top border still ends with the rounded TR corner");
+  assert(stringWidth(top) === 30, `top border occupies full panel width (got ${stringWidth(top)})`);
+}
+
+{
+  // Left-aligned title sits near the left corner.
+  const lines = panel(["x"], 40, { title: "L", border: "rounded", titleAlign: "left" });
+  const top = lines[0];
+  const cutInPos = top.indexOf("┤ L ├");
+  assert(cutInPos > 0 && cutInPos < 5, `left-aligned title sits near left edge (pos ${cutInPos})`);
+}
+
+{
+  // Center-aligned title sits around the middle.
+  const lines = panel(["x"], 40, { title: "C", border: "rounded", titleAlign: "center" });
+  const top = lines[0];
+  const cutInPos = top.indexOf("┤ C ├");
+  assert(cutInPos > 10 && cutInPos < 30, `center-aligned title sits near middle (pos ${cutInPos})`);
+}
+
+{
+  // Title that doesn't fit is silently omitted; border still renders intact.
+  const lines = panel(["x"], 8, { title: "ThisIsTooLongForThePanel", border: "rounded" });
+  const top = lines[0];
+  assert(!top.includes("┤"), "oversized title is omitted, no half-rendered cut-in");
+  assert(top.startsWith("╭") && top.endsWith("╮"), "plain top border survives when title can't fit");
+}
+
+section("panel — hotkeys on bottom border");
+
+{
+  const lines = panel(["body"], 30, {
+    border: "rounded",
+    padding: 1,
+    hotkeys: "q quit  c copy",
+  });
+  const bottom = lines[lines.length - 1];
+  assert(bottom.includes("┤ q quit  c copy ├"), "bottom border carries the hotkey cut-in");
+  assert(bottom.startsWith("╰") && bottom.endsWith("╯"), "bottom corners survive");
+  // Right-aligned: cut-in should be near the right edge.
+  const cutInPos = bottom.indexOf("┤ q");
+  assert(cutInPos > stringWidth(bottom) - 25, `hotkeys are right-aligned (pos ${cutInPos} of ${stringWidth(bottom)})`);
+}
+
+{
+  // Both title + hotkeys at once.
+  const lines = panel(["body"], 40, {
+    border: "rounded",
+    title: "Editor",
+    hotkeys: "ESC back",
+  });
+  assert(lines[0].includes("┤ Editor ├"), "title still rendered when hotkeys are also present");
+  assert(lines[lines.length - 1].includes("┤ ESC back ├"), "hotkeys still rendered when title is also present");
+}
+
+section("panel — focused vs unfocused border");
+
+{
+  let usedBase = 0;
+  let usedFocus = 0;
+  const base = (s: string) => { usedBase++; return s; };
+  const focus = (s: string) => { usedFocus++; return s; };
+
+  panel(["x"], 20, { border: "rounded", borderColor: base, borderFocusColor: focus, focused: false });
+  assert(usedBase > 0 && usedFocus === 0, "unfocused panel uses baseline borderColor");
+
+  usedBase = 0;
+  usedFocus = 0;
+  panel(["x"], 20, { border: "rounded", borderColor: base, borderFocusColor: focus, focused: true });
+  assert(usedFocus > 0 && usedBase === 0, "focused panel uses borderFocusColor");
+}
+
+section("panel — fall-throughs");
+
+{
+  // border: "none" should produce the same result as box().
+  const noBorderPanel = panel(["x"], 20, { border: "none", title: "Ignored" });
+  const noBorderBox = box(["x"], 20, { border: "none" });
+  assertEq(noBorderPanel, noBorderBox, "border: 'none' bypasses the title/hotkey machinery");
+}
+
+{
+  // Style callbacks fire on the title/hotkey text only.
+  let titleSeen = "";
+  let hotkeySeen = "";
+  panel(["x"], 40, {
+    border: "rounded",
+    title: "T",
+    hotkeys: "H",
+    titleStyle: (s) => { titleSeen = s; return `<T>${s}</T>`; },
+    hotkeyStyle: (s) => { hotkeySeen = s; return `<H>${s}</H>`; },
+  });
+  assertEq(titleSeen, " T ", "titleStyle receives the spaced title core");
+  assertEq(hotkeySeen, " H ", "hotkeyStyle receives the spaced hotkey core");
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────
